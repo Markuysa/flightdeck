@@ -1,0 +1,9 @@
+# Gitignored files to copy into every new worktree.
+# Uses .gitignore syntax. Only files that match a pattern AND are gitignored are copied,
+# so tracked files are never duplicated.
+#
+# A worktree is a fresh checkout: without this, every agent starts without .env and
+# fails on its first run. Adjust to match your project.
+
+.env
+.env.local

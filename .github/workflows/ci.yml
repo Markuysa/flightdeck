@@ -1,0 +1,99 @@
+name: CI
+
+# The merge gate. Autopilot replaces human review with this workflow, so it has to run
+# what a reviewer would check. `/autopilot on` refuses to start unless a workflow exists
+# AND branch protection lists its checks as required — a workflow alone proves nothing.
+#
+# Each language job no-ops until the project actually has that stack, so a fresh clone
+# passes and the first ticket is not blocked by a red check on an empty repository.
+# Delete the jobs you do not need and add your own commands to the ones you keep.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        run: |
+          if [ -f go.mod ]; then echo "present=true" >> "$GITHUB_OUTPUT";
+          else echo "present=false" >> "$GITHUB_OUTPUT"; echo "No go.mod — skipping."; fi
+      - if: steps.check.outputs.present == 'true'
+        uses: actions/setup-go@v5
+        with:
+          # Track the module rather than pinning: a mismatch between the toolchain here
+          # and the go directive is a real failure mode, and it only shows up in CI.
+          go-version-file: go.mod
+          cache: true
+      - if: steps.check.outputs.present == 'true'
+        run: go build ./...
+      - if: steps.check.outputs.present == 'true'
+        run: go vet ./...
+      - if: steps.check.outputs.present == 'true'
+        run: go test -race -count=1 ./...
+      - if: steps.check.outputs.present == 'true'
+        uses: golangci/golangci-lint-action@v8
+        with:
+          # Pin it. A floating "latest" once shipped a binary built against an older Go
+          # than go.mod targeted, and every PR went red for a reason unrelated to the code.
+          version: v2.5.0
+
+  node:
+    name: Node
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        run: |
+          if [ -f package.json ]; then echo "dir=." >> "$GITHUB_OUTPUT";
+          elif [ -f ui/package.json ]; then echo "dir=ui" >> "$GITHUB_OUTPUT";
+          else echo "dir=" >> "$GITHUB_OUTPUT"; echo "No package.json — skipping."; fi
+      - if: steps.check.outputs.dir != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ${{ steps.check.outputs.dir }}/package-lock.json
+      - if: steps.check.outputs.dir != ''
+        working-directory: ${{ steps.check.outputs.dir }}
+        run: npm ci
+      - if: steps.check.outputs.dir != ''
+        working-directory: ${{ steps.check.outputs.dir }}
+        run: npm run lint --if-present
+      - if: steps.check.outputs.dir != ''
+        working-directory: ${{ steps.check.outputs.dir }}
+        run: npm test --if-present
+      - if: steps.check.outputs.dir != ''
+        working-directory: ${{ steps.check.outputs.dir }}
+        run: npm run build --if-present
+
+  secrets:
+    name: No secrets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Under autopilot nobody reads the diff before it merges, so this is the last thing
+      # between a leaked credential and the default branch. Keep it even if you drop the
+      # language jobs.
+      - run: |
+          if git ls-files | grep -E '(^|/)(\.env|config\.yaml|secrets\.ya?ml)$'; then
+            echo "::error::A secrets file is tracked — these belong in .gitignore."
+            exit 1
+          fi
+          if git grep -nIE '(sk-ant-[A-Za-z0-9]{20}|sk-[A-Za-z0-9]{32}|ghp_[A-Za-z0-9]{36})' -- . ; then
+            echo "::error::A credential-shaped string is committed."
+            exit 1
+          fi
+          echo "Clean."

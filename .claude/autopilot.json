@@ -1,0 +1,5 @@
+{
+  "enabled": false,
+  "maxInFlight": 1,
+  "note": "Kill switch for unattended execution. next-ticket refuses to start work while enabled is false. Committed on purpose: cloud sessions read it from the repository clone, and every flip of it is auditable in the history. Change it with the /autopilot command rather than by hand."
+}

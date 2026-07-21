@@ -1,0 +1,41 @@
+# Claude Code
+.claude/worktrees/
+.claude/settings.local.json
+
+# Editors
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Dependencies and build output
+node_modules/
+dist/
+build/
+.next/
+target/
+coverage/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Go
+bin/
+*.exe
+vendor/
+
+# FlightDeck runtime
+flightdeck.db
+*.sqlite
+data/
+ui/dist/
+ui/tsconfig.tsbuildinfo
+
+# secrets / local config
+.env
+flightdeck.config.json

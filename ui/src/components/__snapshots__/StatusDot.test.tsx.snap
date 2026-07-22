@@ -1,0 +1,71 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`StatusDot > renders the blocked status 1`] = `
+<span
+  aria-label="Blocked"
+  class="inline-block h-2.5 w-2.5 shrink-0 rounded-chip"
+  role="img"
+  style="background-color: var(--st-blocked);"
+  title="Blocked"
+/>
+`;
+
+exports[`StatusDot > renders the done status 1`] = `
+<span
+  aria-label="Done"
+  class="inline-block h-2.5 w-2.5 shrink-0 rounded-chip"
+  role="img"
+  style="background-color: var(--st-done);"
+  title="Done"
+/>
+`;
+
+exports[`StatusDot > renders the in_progress status 1`] = `
+<span
+  aria-label="In progress"
+  class="inline-block h-2.5 w-2.5 shrink-0 rounded-chip"
+  role="img"
+  style="background-color: var(--st-progress);"
+  title="In progress"
+/>
+`;
+
+exports[`StatusDot > renders the in_review status 1`] = `
+<span
+  aria-label="In review"
+  class="inline-block h-2.5 w-2.5 shrink-0 rounded-chip"
+  role="img"
+  style="background-color: var(--st-review);"
+  title="In review"
+/>
+`;
+
+exports[`StatusDot > renders the live-pulse variant 1`] = `
+<span
+  aria-label="In progress"
+  class="inline-block h-2.5 w-2.5 shrink-0 rounded-chip animate-live-pulse motion-reduce:animate-none"
+  role="img"
+  style="background-color: var(--st-progress);"
+  title="In progress"
+/>
+`;
+
+exports[`StatusDot > renders the needs_attention status 1`] = `
+<span
+  aria-label="Needs attention"
+  class="inline-block h-2.5 w-2.5 shrink-0 rounded-chip"
+  role="img"
+  style="background-color: var(--st-attention);"
+  title="Needs attention"
+/>
+`;
+
+exports[`StatusDot > renders the ready status 1`] = `
+<span
+  aria-label="Ready"
+  class="inline-block h-2.5 w-2.5 shrink-0 rounded-chip"
+  role="img"
+  style="background-color: var(--st-ready);"
+  title="Ready"
+/>
+`;

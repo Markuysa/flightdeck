@@ -41,7 +41,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
   if (!res.ok) {
     const body = await res.text().catch(() => '')
-    throw new ApiError(res.status, body || res.statusText)
+    throw new ApiError(res.status, parseErrorMessage(body) || res.statusText)
   }
 
   if (res.status === 204) {
@@ -49,6 +49,21 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
   const text = await res.text()
   return (text ? JSON.parse(text) : undefined) as T
+}
+
+/** Every non-2xx response is `{"error": "..."}` (internal/api's errorBody,
+ * written by every handler regardless of status code — 400, 404, 409, ...).
+ * Falls back to the raw body when it isn't shaped that way, so a network
+ * failure or an unexpected proxy error still surfaces something readable. */
+function parseErrorMessage(body: string): string {
+  if (!body) return ''
+  try {
+    const parsed = JSON.parse(body) as { error?: unknown }
+    if (typeof parsed.error === 'string') return parsed.error
+  } catch {
+    // not JSON — fall through to the raw body
+  }
+  return body
 }
 
 /** POST /api/session — trade the bearer token for a session cookie. Call

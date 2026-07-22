@@ -1,0 +1,43 @@
+/*
+ * Design tokens — the single source for every colour, radius and font family
+ * in the app. Mirrors docs/DESIGN.md §2 exactly. Nothing outside this file
+ * may hold a colour literal (enforced by scripts/check-tokens.mjs).
+ *
+ * Consumed via tailwind.config.ts, which surfaces every variable below as a
+ * Tailwind theme value (colors, borderRadius, fontFamily) referencing var().
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* 2.1 Colour */
+  --bg: #0a0c10;
+  --surface: #111419;
+  --surface-2: #161a21;
+  --border: #222831;
+  --border-soft: #1a1f27;
+  --text: #e6e9ef;
+  --text-mut: #8a93a3;
+  --text-dim: #586274;
+  --accent: #4c8dff;
+  --accent-soft: rgba(76, 141, 255, 0.12);
+
+  /* 2.2 Status colour — the core semantic. One per derived status; never
+     reused decoratively. */
+  --st-ready: #4c8dff;
+  --st-progress: #ffb224;
+  --st-review: #a879ff;
+  --st-attention: #ff6b4a;
+  --st-blocked: #586274;
+  --st-done: #3dd68c;
+
+  /* 2.3 Typography */
+  --font-display: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --font-ui: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+
+  /* 2.4 Geometry */
+  --radius-card: 10px;
+  --radius-chip: 999px;
+  --radius-nested: 6px;
+}

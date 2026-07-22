@@ -1,0 +1,133 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`StatusChip > renders the blocked status with a count 1`] = `
+<span
+  class="inline-flex items-center gap-1.5 rounded-chip border border-border-soft bg-surface px-2.5 py-1 text-xs text-text-mut"
+>
+  <span
+    aria-label="Blocked"
+    class="inline-block h-2.5 w-2.5 shrink-0 rounded-chip"
+    role="img"
+    style="background-color: var(--st-blocked);"
+    title="Blocked"
+  />
+  <span>
+    Blocked
+  </span>
+  <span
+    class="font-mono text-text"
+  >
+    3
+  </span>
+</span>
+`;
+
+exports[`StatusChip > renders the done status with a count 1`] = `
+<span
+  class="inline-flex items-center gap-1.5 rounded-chip border border-border-soft bg-surface px-2.5 py-1 text-xs text-text-mut"
+>
+  <span
+    aria-label="Done"
+    class="inline-block h-2.5 w-2.5 shrink-0 rounded-chip"
+    role="img"
+    style="background-color: var(--st-done);"
+    title="Done"
+  />
+  <span>
+    Done
+  </span>
+  <span
+    class="font-mono text-text"
+  >
+    3
+  </span>
+</span>
+`;
+
+exports[`StatusChip > renders the in_progress status with a count 1`] = `
+<span
+  class="inline-flex items-center gap-1.5 rounded-chip border border-border-soft bg-surface px-2.5 py-1 text-xs text-text-mut"
+>
+  <span
+    aria-label="In progress"
+    class="inline-block h-2.5 w-2.5 shrink-0 rounded-chip"
+    role="img"
+    style="background-color: var(--st-progress);"
+    title="In progress"
+  />
+  <span>
+    In progress
+  </span>
+  <span
+    class="font-mono text-text"
+  >
+    3
+  </span>
+</span>
+`;
+
+exports[`StatusChip > renders the in_review status with a count 1`] = `
+<span
+  class="inline-flex items-center gap-1.5 rounded-chip border border-border-soft bg-surface px-2.5 py-1 text-xs text-text-mut"
+>
+  <span
+    aria-label="In review"
+    class="inline-block h-2.5 w-2.5 shrink-0 rounded-chip"
+    role="img"
+    style="background-color: var(--st-review);"
+    title="In review"
+  />
+  <span>
+    In review
+  </span>
+  <span
+    class="font-mono text-text"
+  >
+    3
+  </span>
+</span>
+`;
+
+exports[`StatusChip > renders the needs_attention status with a count 1`] = `
+<span
+  class="inline-flex items-center gap-1.5 rounded-chip border border-border-soft bg-surface px-2.5 py-1 text-xs text-text-mut"
+>
+  <span
+    aria-label="Needs attention"
+    class="inline-block h-2.5 w-2.5 shrink-0 rounded-chip"
+    role="img"
+    style="background-color: var(--st-attention);"
+    title="Needs attention"
+  />
+  <span>
+    Needs attention
+  </span>
+  <span
+    class="font-mono text-text"
+  >
+    3
+  </span>
+</span>
+`;
+
+exports[`StatusChip > renders the ready status with a count 1`] = `
+<span
+  class="inline-flex items-center gap-1.5 rounded-chip border border-border-soft bg-surface px-2.5 py-1 text-xs text-text-mut"
+>
+  <span
+    aria-label="Ready"
+    class="inline-block h-2.5 w-2.5 shrink-0 rounded-chip"
+    role="img"
+    style="background-color: var(--st-ready);"
+    title="Ready"
+  />
+  <span>
+    Ready
+  </span>
+  <span
+    class="font-mono text-text"
+  >
+    3
+  </span>
+</span>
+`;

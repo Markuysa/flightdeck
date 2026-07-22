@@ -8,10 +8,10 @@ package core
 // state from. Secrets (routine token, GitHub token) live in the registry,
 // never here.
 type Project struct {
-	ID       string // stable slug
-	Name     string
-	RepoPath string // local checkout FlightDeck reads
-	Remote   string // "github" | "" (local-only)
-	Owner    string // github owner/repo, when Remote == "github"
-	Repo     string
+	ID       string `json:"id"` // stable slug
+	Name     string `json:"name"`
+	RepoPath string `json:"repo_path"` // local checkout FlightDeck reads
+	Remote   string `json:"remote"`    // "github" | "" (local-only)
+	Owner    string `json:"owner"`     // github owner/repo, when Remote == "github"
+	Repo     string `json:"repo"`
 }

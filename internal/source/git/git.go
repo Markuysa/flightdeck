@@ -18,6 +18,7 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/Markuysa/flightdeck/internal/core"
 )
@@ -189,4 +190,25 @@ func (r *Repo) FileOnBranch(ctx context.Context, branch, path string) (string, e
 		return "", fmt.Errorf("reading %q on branch %q: %w", path, branch, err)
 	}
 	return out, nil
+}
+
+// LastCommitTime returns the commit time of branch's tip (its most recent
+// commit). It is not part of core.GitState — no derivation rule needs it —
+// but ticket 008's api layer uses it to fill AgentSession's *_at fields
+// best-effort, since no source records a session's actual start/heartbeat
+// times in v1.
+func (r *Repo) LastCommitTime(ctx context.Context, branch string) (time.Time, error) {
+	ref, err := r.resolveRef(ctx, branch)
+	if err != nil {
+		return time.Time{}, err
+	}
+	out, err := r.run(ctx, "log", "-1", "--format=%cI", ref)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("reading last commit time for %q: %w", branch, err)
+	}
+	t, err := time.Parse(time.RFC3339, strings.TrimSpace(out))
+	if err != nil {
+		return time.Time{}, fmt.Errorf("parsing last commit time for %q: %w", branch, err)
+	}
+	return t, nil
 }

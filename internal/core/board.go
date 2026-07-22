@@ -20,14 +20,14 @@ const (
 // applicable, the branch and PR carrying the work.
 type BoardTicket struct {
 	Ticket
-	Status DerivedStatus
-	Branch string   // claude/NNN-*, when it exists
-	PR     *PRState // when in review
+	Status DerivedStatus `json:"status"`
+	Branch string        `json:"branch"` // claude/NNN-*, when it exists
+	PR     *PRState      `json:"pr"`     // when in review
 }
 
 // PRState is the open pull request for a ticket's branch, when one exists.
 type PRState struct {
-	Number int
-	URL    string
-	CI     string // pending|green|red|unknown
+	Number int    `json:"number"`
+	URL    string `json:"url"`
+	CI     string `json:"ci"` // pending|green|red|unknown
 }

@@ -9,8 +9,8 @@ license: MIT
   Copied rather than installed as a plugin so it travels with the repository into
   cloud sessions, with no marketplace fetch at session start and no third-party hooks.
 
-  Scoped to the `dev` role only, via `skills: ponytail` in .claude/agents/dev.md.
-  validator, reviewer and researcher keep their own priorities.
+  Scoped to the building roles via `skills: ponytail` in .claude/agents/{dev,designer,
+  frontend,backend}.md. validator, reviewer and researcher keep their own priorities.
 
   Upstream changes are not pulled automatically. Re-vendor to update.
 -->

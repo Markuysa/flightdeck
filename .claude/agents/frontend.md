@@ -2,7 +2,7 @@
 name: frontend
 description: Builds UI screens and client logic on top of the design system and the frozen API contract. Use for tickets whose role is frontend — pages, flows, client state, data wiring.
 tools: Read, Write, Edit, Bash, Grep, Glob, Skill
-skills: ponytail
+skills: ponytail, frontend-design, taste-skill
 model: sonnet
 isolation: worktree
 maxTurns: 80
@@ -23,6 +23,10 @@ and you own neither:
 
 ## Rules
 
+- Your skills split by layer: `ponytail` keeps the *code* minimal; `frontend-design` and
+  `taste-skill` keep the *design* distinctive. A lean diff is no excuse for a flat, generic
+  screen — apply the design skills to layout, type and motion even while ponytail trims the
+  code. (`taste-skill` targets landing/marketing/portfolio pages, not dense product UI.)
 - Take build, test, and lint commands from `CLAUDE.md`.
 - Test behavior, not markup: what the user can do, what happens on error, empty and
   loading states. Testing-library-style over snapshot-everything; snapshots belong to the

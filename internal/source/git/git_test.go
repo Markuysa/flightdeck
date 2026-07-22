@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestBranchesListsCreatedBranches(t *testing.T) {
@@ -146,5 +147,36 @@ func TestFileOnBranchReturnsBranchVersionNotMains(t *testing.T) {
 	}
 	if !strings.Contains(onBranch, "status: done") || !strings.Contains(onBranch, "branch body") {
 		t.Errorf("branch content = %q, want it to contain the branch ticket's status and body", onBranch)
+	}
+}
+
+func TestLastCommitTimeReturnsTipCommitTime(t *testing.T) {
+	t.Parallel()
+	before := time.Now().Add(-time.Minute)
+	repo := NewFixtureRepo(t,
+		[]FixtureTicket{{ID: 1, Title: "One", Role: "backend", Status: "todo"}},
+		[]FixtureBranch{
+			{
+				Name:    "claude/001-in-progress",
+				Tickets: []FixtureTicket{{ID: 1, Title: "One", Role: "backend", Status: "todo", Body: "in progress"}},
+			},
+		},
+	)
+
+	got, err := repo.LastCommitTime(context.Background(), "claude/001-in-progress")
+	if err != nil {
+		t.Fatalf("LastCommitTime: %v", err)
+	}
+	if got.Before(before) {
+		t.Errorf("LastCommitTime() = %v, want a time within the last minute", got)
+	}
+}
+
+func TestLastCommitTimeUnknownBranchIsAnError(t *testing.T) {
+	t.Parallel()
+	repo := NewFixtureRepo(t, []FixtureTicket{{ID: 1, Title: "One", Role: "backend", Status: "todo"}}, nil)
+
+	if _, err := repo.LastCommitTime(context.Background(), "claude/does-not-exist"); err == nil {
+		t.Fatal("LastCommitTime(unknown branch) error = nil, want an error")
 	}
 }

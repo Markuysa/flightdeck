@@ -31,7 +31,9 @@ vendor/
 
 # FlightDeck runtime
 flightdeck.db
+*.db
 *.sqlite
+*.sqlite3
 data/
 ui/dist/
 ui/tsconfig.tsbuildinfo

@@ -38,6 +38,15 @@ data/
 ui/dist/
 ui/tsconfig.tsbuildinfo
 
+# Embedded UI build (internal/webui/embed.go): index.html is a committed
+# placeholder that keeps `go:embed` resolving on a clean checkout; the real
+# ui/dist/* assets are copied on top of it for a production build and are
+# never committed. The generic `dist/` rule above would hide this whole
+# directory, so it is explicitly un-ignored before re-ignoring its contents.
+!internal/webui/dist/
+internal/webui/dist/*
+!internal/webui/dist/index.html
+
 # secrets / local config
 .env
 flightdeck.config.json

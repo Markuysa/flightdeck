@@ -10,6 +10,7 @@ import (
 
 	"github.com/Markuysa/flightdeck/internal/core"
 	"github.com/Markuysa/flightdeck/internal/derive"
+	"github.com/Markuysa/flightdeck/internal/registry"
 )
 
 // handleListProjects implements GET /api/projects (US-1): every registered
@@ -67,7 +68,11 @@ func zeroCounts() map[core.DerivedStatus]int {
 
 // handleCreateProject implements POST /api/projects (US-7): registers a
 // project from name/repo_path/optional github, generating its stable slug
-// ID server-side — the frozen request body carries no id field.
+// ID server-side — the frozen request body carries no id field. When the
+// request carries a non-empty routine_token and/or github_token, they are
+// stored via registry.SetSecrets right after Add succeeds; neither is ever
+// echoed back — the response is a bare core.Project, which has no secret
+// field by construction (ADR-005).
 func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	var body CreateProjectRequest
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -98,6 +103,17 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "a project with this name is already registered")
 		return
 	}
+
+	if body.RoutineToken != "" || body.GitHubToken != "" {
+		if err := s.registry.SetSecrets(r.Context(), p.ID, registry.Secrets{
+			RoutineToken: body.RoutineToken,
+			GitHubToken:  body.GitHubToken,
+		}); err != nil {
+			writeError(w, http.StatusInternalServerError, "project registered but failed to store secrets")
+			return
+		}
+	}
+
 	writeJSON(w, http.StatusOK, p)
 }
 

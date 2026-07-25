@@ -69,6 +69,25 @@ export interface CreateProjectRequest {
   name: string
   repo_path: string
   github?: { owner: string; repo: string }
+  /** Optional — set via registry.SetSecrets right after registration, never
+   * echoed back by POST /api/projects. Omit or leave blank to register
+   * without a token. */
+  routine_token?: string
+  github_token?: string
+}
+
+/** PUT /api/projects/{id}/secrets request body. An omitted/empty field
+ * leaves that token unchanged (the backend reads-current, overlays, writes). */
+export interface SetSecretsRequest {
+  routine_token?: string
+  github_token?: string
+}
+
+/** GET /api/projects/{id}/secrets response: whether each token is
+ * currently set, never the value (ADR-005). */
+export interface SecretsStatus {
+  routine_token_set: boolean
+  github_token_set: boolean
 }
 
 export interface DispatchRequest {

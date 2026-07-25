@@ -1,7 +1,9 @@
-import { Trash2 } from 'lucide-react'
+import { KeyRound, Trash2 } from 'lucide-react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { STATUS_ORDER } from '../lib/status'
 import type { ProjectSummary } from '../lib/types'
+import { ManageTokensDialog } from './ManageTokensDialog'
 import { StatusChip } from './StatusChip'
 import { StatusDot } from './StatusDot'
 
@@ -12,8 +14,12 @@ export interface ProjectCardProps {
 
 /** One registered project on the Fleet screen (docs/DESIGN.md §4.1): name
  * (with a live-agent dot when a ticket is in progress), a StatusChip per
- * derived status, and autopilot state. */
+ * derived status, autopilot state, and a "manage tokens" affordance (ticket
+ * 016) that opens ManageTokensDialog to set/rotate its routine/GitHub
+ * tokens after registration. */
 export function ProjectCard({ project, onRemove }: ProjectCardProps) {
+  const [managingTokens, setManagingTokens] = useState(false)
+
   return (
     <article className="flex flex-col gap-4 rounded-card border border-border-soft bg-surface p-4 transition-colors duration-150 hover:border-border">
       <header className="flex items-start justify-between gap-2">
@@ -27,14 +33,24 @@ export function ProjectCard({ project, onRemove }: ProjectCardProps) {
           </span>
           <span className="truncate font-mono text-xs text-text-dim">{project.repo_path}</span>
         </Link>
-        <button
-          type="button"
-          onClick={onRemove}
-          aria-label={`Remove ${project.name}`}
-          className="shrink-0 rounded-nested p-1.5 text-text-dim transition-colors duration-150 hover:bg-surface-2 hover:text-text"
-        >
-          <Trash2 className="h-4 w-4" />
-        </button>
+        <div className="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setManagingTokens(true)}
+            aria-label={`Manage tokens for ${project.name}`}
+            className="rounded-nested p-1.5 text-text-dim transition-colors duration-150 hover:bg-surface-2 hover:text-text"
+          >
+            <KeyRound className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={onRemove}
+            aria-label={`Remove ${project.name}`}
+            className="rounded-nested p-1.5 text-text-dim transition-colors duration-150 hover:bg-surface-2 hover:text-text"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </div>
       </header>
 
       <div className="flex flex-wrap gap-1.5">
@@ -49,6 +65,14 @@ export function ProjectCard({ project, onRemove }: ProjectCardProps) {
           {project.autopilot ? 'On' : 'Off'}
         </span>
       </footer>
+
+      {managingTokens && (
+        <ManageTokensDialog
+          projectId={project.id}
+          projectName={project.name}
+          onClose={() => setManagingTokens(false)}
+        />
+      )}
     </article>
   )
 }

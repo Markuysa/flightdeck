@@ -14,6 +14,8 @@ import type {
   DispatchResponse,
   Project,
   ProjectSummary,
+  SecretsStatus,
+  SetSecretsRequest,
   TicketDetail,
 } from './types'
 
@@ -80,10 +82,26 @@ export function listProjects(): Promise<ProjectSummary[]> {
   return request<ProjectSummary[]>('/projects')
 }
 
-/** POST /api/projects — register a project (US-7). */
+/** POST /api/projects — register a project (US-7), optionally with
+ * routine_token/github_token; the response never echoes them back. */
 export function createProject(body: CreateProjectRequest): Promise<Project> {
   return request<Project>('/projects', {
     method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+/** GET /api/projects/{id}/secrets — whether each token is set, never the
+ * value (ADR-005). */
+export function getSecretsStatus(id: string): Promise<SecretsStatus> {
+  return request<SecretsStatus>(`/projects/${encodeURIComponent(id)}/secrets`)
+}
+
+/** PUT /api/projects/{id}/secrets — set/rotate a project's tokens. An
+ * omitted/blank field leaves that token unchanged. */
+export function setSecrets(id: string, body: SetSecretsRequest): Promise<void> {
+  return request<void>(`/projects/${encodeURIComponent(id)}/secrets`, {
+    method: 'PUT',
     body: JSON.stringify(body),
   })
 }

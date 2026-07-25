@@ -133,6 +133,42 @@ describe('Fleet', () => {
     expect(await screen.findByText('FlightDeck')).toBeInTheDocument()
   })
 
+  it('includes token fields in createProject only when the human fills them in', async () => {
+    mockedApi.listProjects.mockResolvedValueOnce([]).mockResolvedValueOnce([summary()])
+    mockedApi.createProject.mockResolvedValue({
+      id: 'flightdeck',
+      name: 'FlightDeck',
+      repo_path: '/repos/flightdeck',
+      remote: '',
+      owner: '',
+      repo: '',
+    })
+    renderFleet()
+
+    await screen.findByText('No projects registered yet')
+    fireEvent.click(screen.getByRole('button', { name: /register project/i }))
+    fireEvent.change(screen.getByLabelText(/^name$/i), { target: { value: 'FlightDeck' } })
+    fireEvent.change(screen.getByLabelText(/repository path/i), {
+      target: { value: '/repos/flightdeck' },
+    })
+    fireEvent.change(screen.getByLabelText(/routine token/i), {
+      target: { value: 'routine-tok-test' },
+    })
+    fireEvent.change(screen.getByLabelText(/github token/i), {
+      target: { value: 'gh-tok-test' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /^register$/i }))
+
+    await waitFor(() =>
+      expect(mockedApi.createProject).toHaveBeenCalledWith({
+        name: 'FlightDeck',
+        repo_path: '/repos/flightdeck',
+        routine_token: 'routine-tok-test',
+        github_token: 'gh-tok-test',
+      }),
+    )
+  })
+
   it('shows the API validation error inline and keeps the dialog open', async () => {
     mockedApi.listProjects.mockResolvedValue([])
     mockedApi.createProject.mockRejectedValue(new Error('name and repo_path are required'))
@@ -172,5 +208,21 @@ describe('Fleet', () => {
 
     await waitFor(() => expect(mockedApi.deleteProject).toHaveBeenCalledWith('flightdeck'))
     expect(await screen.findByText('No projects registered yet')).toBeInTheDocument()
+  })
+
+  it('opens the manage-tokens dialog from a project card and loads its status', async () => {
+    mockedApi.listProjects.mockResolvedValue([summary()])
+    mockedApi.getSecretsStatus.mockResolvedValue({
+      routine_token_set: true,
+      github_token_set: false,
+    })
+    renderFleet()
+
+    await screen.findByText('FlightDeck')
+    fireEvent.click(screen.getByRole('button', { name: /manage tokens for flightdeck/i }))
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(await screen.findByText('(set)')).toBeInTheDocument()
+    expect(mockedApi.getSecretsStatus).toHaveBeenCalledWith('flightdeck')
   })
 })

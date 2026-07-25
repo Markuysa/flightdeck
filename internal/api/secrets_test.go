@@ -65,6 +65,12 @@ func TestSecretsNeverAppearInAnyHandlerResponse(t *testing.T) {
 	calls := []call{
 		{http.MethodGet, "/api/projects", nil},
 		{http.MethodPost, "/api/projects", CreateProjectRequest{Name: "Other", RepoPath: "/repos/other"}},
+		// POST /api/projects with tokens (ticket 016): the create response
+		// must redact these exactly like every other endpoint.
+		{http.MethodPost, "/api/projects", CreateProjectRequest{
+			Name: "Newco", RepoPath: "/repos/newco",
+			RoutineToken: secretRoutineToken, GitHubToken: secretGitHubToken,
+		}},
 		{http.MethodGet, "/api/projects/acme/board", nil},
 		{http.MethodGet, "/api/projects/acme/tickets/1", nil},
 		{http.MethodGet, "/api/projects/acme/tickets/2", nil},
@@ -73,6 +79,12 @@ func TestSecretsNeverAppearInAnyHandlerResponse(t *testing.T) {
 		{http.MethodPut, "/api/projects/acme/autopilot", AutopilotState{On: true}},
 		{http.MethodPost, "/api/projects/acme/dispatch", DispatchRequest{TicketID: 1}},
 		{http.MethodPost, "/api/projects/acme/tickets/2/approve", nil},
+		// The two new secrets routes (ticket 016) are the ones most at risk
+		// of leaking a token, so they get the same grep as everything else.
+		{http.MethodPut, "/api/projects/acme/secrets", SetSecretsRequest{
+			RoutineToken: secretRoutineToken, GitHubToken: secretGitHubToken,
+		}},
+		{http.MethodGet, "/api/projects/acme/secrets", nil},
 	}
 
 	for _, c := range calls {
@@ -96,6 +108,113 @@ func TestSecretsNeverAppearInAnyHandlerResponse(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+// TestCreateProjectWithTokensStoresSecrets is the ticket's first acceptance
+// criterion: POST /api/projects with routine_token/github_token stores them
+// via SetSecrets, and the response is the bare core.Project (no token
+// field to even check — decodeJSON below would fail to compile one in).
+func TestCreateProjectWithTokensStoresSecrets(t *testing.T) {
+	t.Parallel()
+	ts := newTestServer()
+	h := ts.srv.Handler()
+
+	rec := doRequest(t, h, http.MethodPost, "/api/projects", CreateProjectRequest{
+		Name: "Acme", RepoPath: "/repos/acme",
+		RoutineToken: secretRoutineToken, GitHubToken: secretGitHubToken,
+	}, ts.token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST /api/projects = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	created := decodeJSON[core.Project](t, rec)
+
+	sec, err := ts.registry.Secrets(context.Background(), created.ID)
+	must(t, err)
+	if sec.RoutineToken != secretRoutineToken || sec.GitHubToken != secretGitHubToken {
+		t.Fatalf("stored secrets = %+v, want routine=%q github=%q", sec, secretRoutineToken, secretGitHubToken)
+	}
+}
+
+// TestSetSecretsOverlaysOnlyProvidedFields is the PUT route's documented
+// semantics: an omitted/empty field in the request leaves the current token
+// unchanged rather than blanking it.
+func TestSetSecretsOverlaysOnlyProvidedFields(t *testing.T) {
+	t.Parallel()
+	ts := newTestServer()
+	h := ts.srv.Handler()
+	ctx := context.Background()
+
+	must(t, ts.registry.Add(ctx, core.Project{ID: "acme", Name: "Acme", RepoPath: "/repos/acme"}))
+	must(t, ts.registry.SetSecrets(ctx, "acme", registry.Secrets{
+		RoutineToken: secretRoutineToken,
+		GitHubToken:  secretGitHubToken,
+	}))
+
+	const rotatedGitHubToken = "gh-tok-test-2"
+	rec := doRequest(t, h, http.MethodPut, "/api/projects/acme/secrets", SetSecretsRequest{
+		GitHubToken: rotatedGitHubToken,
+	}, ts.token)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("PUT .../secrets = %d, want 204: %s", rec.Code, rec.Body.String())
+	}
+
+	sec, err := ts.registry.Secrets(ctx, "acme")
+	must(t, err)
+	if sec.RoutineToken != secretRoutineToken {
+		t.Errorf("routine token = %q, want unchanged %q", sec.RoutineToken, secretRoutineToken)
+	}
+	if sec.GitHubToken != rotatedGitHubToken {
+		t.Errorf("github token = %q, want rotated to %q", sec.GitHubToken, rotatedGitHubToken)
+	}
+}
+
+// TestGetSecretsStatusReportsBooleansOnly is the GET route's contract:
+// {routine_token_set, github_token_set}, computed from whether the stored
+// value is non-empty, never the value itself.
+func TestGetSecretsStatusReportsBooleansOnly(t *testing.T) {
+	t.Parallel()
+	ts := newTestServer()
+	h := ts.srv.Handler()
+	ctx := context.Background()
+
+	must(t, ts.registry.Add(ctx, core.Project{ID: "acme", Name: "Acme", RepoPath: "/repos/acme"}))
+
+	rec := doRequest(t, h, http.MethodGet, "/api/projects/acme/secrets", nil, ts.token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET .../secrets (no tokens set) = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	status := decodeJSON[SecretsStatus](t, rec)
+	if status.RoutineTokenSet || status.GitHubTokenSet {
+		t.Fatalf("status = %+v, want both false before any token is set", status)
+	}
+
+	must(t, ts.registry.SetSecrets(ctx, "acme", registry.Secrets{RoutineToken: secretRoutineToken}))
+
+	rec = doRequest(t, h, http.MethodGet, "/api/projects/acme/secrets", nil, ts.token)
+	status = decodeJSON[SecretsStatus](t, rec)
+	if !status.RoutineTokenSet || status.GitHubTokenSet {
+		t.Fatalf("status = %+v, want routine=true github=false", status)
+	}
+}
+
+// TestSecretsRoutesReturn404ForUnknownProject covers both new routes'
+// not-found behaviour.
+func TestSecretsRoutesReturn404ForUnknownProject(t *testing.T) {
+	t.Parallel()
+	ts := newTestServer()
+	h := ts.srv.Handler()
+
+	putRec := doRequest(t, h, http.MethodPut, "/api/projects/nope/secrets", SetSecretsRequest{
+		RoutineToken: secretRoutineToken,
+	}, ts.token)
+	if putRec.Code != http.StatusNotFound {
+		t.Errorf("PUT /api/projects/nope/secrets = %d, want 404", putRec.Code)
+	}
+
+	getRec := doRequest(t, h, http.MethodGet, "/api/projects/nope/secrets", nil, ts.token)
+	if getRec.Code != http.StatusNotFound {
+		t.Errorf("GET /api/projects/nope/secrets = %d, want 404", getRec.Code)
 	}
 }
 

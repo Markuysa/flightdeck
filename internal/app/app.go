@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/Markuysa/flightdeck/internal/api"
+	"github.com/Markuysa/flightdeck/internal/core"
+	"github.com/Markuysa/flightdeck/internal/demo"
 	"github.com/Markuysa/flightdeck/internal/registry"
 	"github.com/Markuysa/flightdeck/internal/webui"
 )
@@ -133,6 +135,14 @@ func (a *App) Events() *api.Broker { return a.apiSrv.Events() }
 
 // Close releases the App's resources: the registry's database connection.
 func (a *App) Close() error { return a.store.Close() }
+
+// SeedDemo builds and registers the demo fixture project (internal/demo),
+// replacing any previous registration under the same id. cmd/flightdeck
+// calls this once, before Run, when the operator passed `serve --demo` — so
+// the UI has a project to show with no real repository configured.
+func (a *App) SeedDemo(ctx context.Context) (core.Project, error) {
+	return demo.Seed(ctx, a.store)
+}
 
 // Run serves the App on cfg.Addr until ctx is canceled, then shuts down
 // gracefully: it stops accepting new connections, gives in-flight requests

@@ -39,6 +39,10 @@ Environment (serve):
   FLIGHTDECK_ADDR    optional — listen address, default ":8080".
   FLIGHTDECK_DB      optional — registry SQLite file path, default "flightdeck.db".
                      In --demo mode, defaults to a throwaway temp file when unset.
+  FLIGHTDECK_REFRESH_INTERVAL   optional — how often the background refresher
+                     re-derives every project's board and publishes
+                     board.changed/ci.changed, default "5s". "off" (or a
+                     duration <= 0) disables it.
 
 Flags (serve):
   --demo   Seed a fixture project (tickets across several derived statuses,

@@ -1,8 +1,13 @@
+/* tokens.css must be imported BEFORE the @tailwind directives: CSS requires
+   @import to precede all other rules, and PostCSS silently DROPS an @import
+   that appears after them — which would leave every design token (--bg,
+   --surface, --text, --accent, the six --st-* status colours, fonts, radii)
+   undefined at runtime and the whole app rendering on fallback colours. */
+@import './styles/tokens.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-@import './styles/tokens.css';
 
 html,
 body,

@@ -1,5 +1,5 @@
 import type { DerivedStatus } from '../lib/types'
-import { STATUS_META } from '../lib/status'
+import { STATUS_META, statusColor } from '../lib/status'
 
 export interface StatusDotProps {
   status: DerivedStatus
@@ -28,7 +28,7 @@ export function StatusDot({ status, live = false, className = '' }: StatusDotPro
       ]
         .filter(Boolean)
         .join(' ')}
-      style={{ backgroundColor: `var(${meta.colorVar})` }}
+      style={{ backgroundColor: statusColor(status) }}
     />
   )
 }

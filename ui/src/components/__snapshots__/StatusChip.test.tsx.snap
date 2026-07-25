@@ -2,7 +2,7 @@
 
 exports[`StatusChip > renders the blocked status with a count 1`] = `
 <span
-  class="inline-flex items-center gap-1.5 rounded-chip border border-border-soft bg-surface px-2.5 py-1 text-xs text-text-mut"
+  class="inline-flex items-center gap-1.5 rounded-chip bg-surface-2 px-2.5 py-1 text-xs text-text-mut"
 >
   <span
     aria-label="Blocked"
@@ -15,7 +15,8 @@ exports[`StatusChip > renders the blocked status with a count 1`] = `
     Blocked
   </span>
   <span
-    class="font-mono text-text"
+    class="font-mono font-medium tabular-nums"
+    style="color: var(--st-blocked);"
   >
     3
   </span>
@@ -24,7 +25,7 @@ exports[`StatusChip > renders the blocked status with a count 1`] = `
 
 exports[`StatusChip > renders the done status with a count 1`] = `
 <span
-  class="inline-flex items-center gap-1.5 rounded-chip border border-border-soft bg-surface px-2.5 py-1 text-xs text-text-mut"
+  class="inline-flex items-center gap-1.5 rounded-chip bg-surface-2 px-2.5 py-1 text-xs text-text-mut"
 >
   <span
     aria-label="Done"
@@ -37,7 +38,8 @@ exports[`StatusChip > renders the done status with a count 1`] = `
     Done
   </span>
   <span
-    class="font-mono text-text"
+    class="font-mono font-medium tabular-nums"
+    style="color: var(--st-done);"
   >
     3
   </span>
@@ -46,7 +48,7 @@ exports[`StatusChip > renders the done status with a count 1`] = `
 
 exports[`StatusChip > renders the in_progress status with a count 1`] = `
 <span
-  class="inline-flex items-center gap-1.5 rounded-chip border border-border-soft bg-surface px-2.5 py-1 text-xs text-text-mut"
+  class="inline-flex items-center gap-1.5 rounded-chip bg-surface-2 px-2.5 py-1 text-xs text-text-mut"
 >
   <span
     aria-label="In progress"
@@ -59,7 +61,8 @@ exports[`StatusChip > renders the in_progress status with a count 1`] = `
     In progress
   </span>
   <span
-    class="font-mono text-text"
+    class="font-mono font-medium tabular-nums"
+    style="color: var(--st-progress);"
   >
     3
   </span>
@@ -68,7 +71,7 @@ exports[`StatusChip > renders the in_progress status with a count 1`] = `
 
 exports[`StatusChip > renders the in_review status with a count 1`] = `
 <span
-  class="inline-flex items-center gap-1.5 rounded-chip border border-border-soft bg-surface px-2.5 py-1 text-xs text-text-mut"
+  class="inline-flex items-center gap-1.5 rounded-chip bg-surface-2 px-2.5 py-1 text-xs text-text-mut"
 >
   <span
     aria-label="In review"
@@ -81,7 +84,8 @@ exports[`StatusChip > renders the in_review status with a count 1`] = `
     In review
   </span>
   <span
-    class="font-mono text-text"
+    class="font-mono font-medium tabular-nums"
+    style="color: var(--st-review);"
   >
     3
   </span>
@@ -90,7 +94,7 @@ exports[`StatusChip > renders the in_review status with a count 1`] = `
 
 exports[`StatusChip > renders the needs_attention status with a count 1`] = `
 <span
-  class="inline-flex items-center gap-1.5 rounded-chip border border-border-soft bg-surface px-2.5 py-1 text-xs text-text-mut"
+  class="inline-flex items-center gap-1.5 rounded-chip bg-surface-2 px-2.5 py-1 text-xs text-text-mut"
 >
   <span
     aria-label="Needs attention"
@@ -103,7 +107,8 @@ exports[`StatusChip > renders the needs_attention status with a count 1`] = `
     Needs attention
   </span>
   <span
-    class="font-mono text-text"
+    class="font-mono font-medium tabular-nums"
+    style="color: var(--st-attention);"
   >
     3
   </span>
@@ -112,7 +117,7 @@ exports[`StatusChip > renders the needs_attention status with a count 1`] = `
 
 exports[`StatusChip > renders the ready status with a count 1`] = `
 <span
-  class="inline-flex items-center gap-1.5 rounded-chip border border-border-soft bg-surface px-2.5 py-1 text-xs text-text-mut"
+  class="inline-flex items-center gap-1.5 rounded-chip bg-surface-2 px-2.5 py-1 text-xs text-text-mut"
 >
   <span
     aria-label="Ready"
@@ -125,7 +130,8 @@ exports[`StatusChip > renders the ready status with a count 1`] = `
     Ready
   </span>
   <span
-    class="font-mono text-text"
+    class="font-mono font-medium tabular-nums"
+    style="color: var(--st-ready);"
   >
     3
   </span>

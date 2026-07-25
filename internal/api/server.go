@@ -13,16 +13,22 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/Markuysa/flightdeck/internal/core"
+	"github.com/Markuysa/flightdeck/internal/registry"
 )
 
 // ProjectRegistry is what the projects handlers need to CRUD registered
-// projects: registry.Store satisfies it structurally, with no wrapper
-// needed. Handler tests fake it in-memory, so no test opens a SQLite file.
+// projects and read/write their secrets: registry.Store satisfies it
+// structurally, with no wrapper needed. Handler tests fake it in-memory, so
+// no test opens a SQLite file. Secrets/SetSecrets never surface in a
+// projects.go response — only secrets.go's two routes touch them, and even
+// those never return a token value (ADR-005).
 type ProjectRegistry interface {
 	Add(ctx context.Context, p core.Project) error
 	List(ctx context.Context) ([]core.Project, error)
 	Get(ctx context.Context, id string) (core.Project, error)
 	Remove(ctx context.Context, id string) error
+	Secrets(ctx context.Context, id string) (registry.Secrets, error)
+	SetSecrets(ctx context.Context, id string, sec registry.Secrets) error
 }
 
 // Config wires a Server's dependencies. Token is FLIGHTDECK_TOKEN's value —
@@ -89,6 +95,8 @@ func (s *Server) buildRouter() chi.Router {
 		r.Post("/api/projects", s.handleCreateProject)
 		r.Delete("/api/projects/{id}", s.handleDeleteProject)
 		r.Get("/api/projects/{id}/board", s.handleGetBoard)
+		r.Put("/api/projects/{id}/secrets", s.handleSetSecrets)
+		r.Get("/api/projects/{id}/secrets", s.handleGetSecretsStatus)
 		r.Get("/api/projects/{id}/tickets/{tid}", s.handleGetTicket)
 		r.Post("/api/projects/{id}/dispatch", s.handleDispatch)
 		r.Get("/api/projects/{id}/autopilot", s.handleGetAutopilot)

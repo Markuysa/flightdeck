@@ -9,14 +9,17 @@ export interface RegisterProjectDialogProps {
   onRegister: (body: CreateProjectRequest) => Promise<void>
 }
 
-const INPUT_CLASS =
+/** Shared with ManageTokensDialog — the one text-input look this app uses. */
+export const INPUT_CLASS =
   'rounded-nested border border-border-soft bg-bg px-3 py-1.5 text-sm text-text placeholder:text-text-dim'
 
-/** Register a project (US-7): posts `{name, repo_path, github?}`. Backend
- * validation errors (400/409/...) render inline rather than closing the
- * dialog (docs/tickets/009's acceptance criteria). Escape and a backdrop
- * click both close it; focus starts on the name field and returns to
- * whatever triggered the dialog on close.
+/** Register a project (US-7): posts `{name, repo_path, github?, routine_token?,
+ * github_token?}`. The token fields are `type="password"`, optional, and only
+ * ever sent (trimmed) in this one request — never logged, never kept in
+ * state beyond the form. Backend validation errors (400/409/...) render
+ * inline rather than closing the dialog (docs/tickets/009's acceptance
+ * criteria). Escape and a backdrop click both close it; focus starts on the
+ * name field and returns to whatever triggered the dialog on close.
  *
  * The caller mounts this only while the dialog should be open (`{open &&
  * <RegisterProjectDialog .../>}`) rather than passing an `open` prop — a
@@ -26,6 +29,8 @@ export function RegisterProjectDialog({ onClose, onRegister }: RegisterProjectDi
   const [repoPath, setRepoPath] = useState('')
   const [owner, setOwner] = useState('')
   const [repo, setRepo] = useState('')
+  const [routineToken, setRoutineToken] = useState('')
+  const [githubToken, setGithubToken] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const nameRef = useRef<HTMLInputElement>(null)
@@ -61,6 +66,8 @@ export function RegisterProjectDialog({ onClose, onRegister }: RegisterProjectDi
         name: name.trim(),
         repo_path: repoPath.trim(),
         ...(owner.trim() && repo.trim() ? { github: { owner: owner.trim(), repo: repo.trim() } } : {}),
+        ...(routineToken.trim() ? { routine_token: routineToken.trim() } : {}),
+        ...(githubToken.trim() ? { github_token: githubToken.trim() } : {}),
       })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to register project.')
@@ -118,6 +125,28 @@ export function RegisterProjectDialog({ onClose, onRegister }: RegisterProjectDi
               <input
                 value={repo}
                 onChange={(event) => setRepo(event.target.value)}
+                className={INPUT_CLASS}
+              />
+            </label>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="flex flex-col gap-1.5 text-sm text-text-mut">
+              Routine token <span className="text-text-dim">(optional)</span>
+              <input
+                type="password"
+                autoComplete="off"
+                value={routineToken}
+                onChange={(event) => setRoutineToken(event.target.value)}
+                className={INPUT_CLASS}
+              />
+            </label>
+            <label className="flex flex-col gap-1.5 text-sm text-text-mut">
+              GitHub token <span className="text-text-dim">(optional)</span>
+              <input
+                type="password"
+                autoComplete="off"
+                value={githubToken}
+                onChange={(event) => setGithubToken(event.target.value)}
                 className={INPUT_CLASS}
               />
             </label>

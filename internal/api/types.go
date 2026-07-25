@@ -36,14 +36,39 @@ type TicketDetail struct {
 
 // CreateProjectRequest is POST /api/projects' request body (US-7). GitHub
 // is optional: a project registered without it gets Remote == "" and
-// always renders with PR/CI state absent.
+// always renders with PR/CI state absent. RoutineToken/GitHubToken are also
+// optional and, when either is non-empty, are written via
+// registry.Store.SetSecrets right after the project is added — they are
+// never echoed back in the response (handleCreateProject returns a bare
+// core.Project, which carries no secret field by construction).
 type CreateProjectRequest struct {
-	Name     string `json:"name"`
-	RepoPath string `json:"repo_path"`
-	GitHub   *struct {
+	Name         string `json:"name"`
+	RepoPath     string `json:"repo_path"`
+	RoutineToken string `json:"routine_token,omitempty"`
+	GitHubToken  string `json:"github_token,omitempty"`
+	GitHub       *struct {
 		Owner string `json:"owner"`
 		Repo  string `json:"repo"`
 	} `json:"github,omitempty"`
+}
+
+// SetSecretsRequest is PUT /api/projects/{id}/secrets' request body. Either
+// field may be omitted or left an empty string to leave that token
+// unchanged — handleSetSecrets reads the project's current registry.Secrets
+// and overlays only the non-empty fields before writing, so this is
+// deliberately not a full replace: there is no way to clear a token back to
+// empty through this endpoint (not asked for by the ticket; SetSecrets
+// still supports it directly for anyone driving the registry itself).
+type SetSecretsRequest struct {
+	RoutineToken string `json:"routine_token,omitempty"`
+	GitHubToken  string `json:"github_token,omitempty"`
+}
+
+// SecretsStatus is GET /api/projects/{id}/secrets' response body: whether
+// each token is currently set, never the value (ADR-005).
+type SecretsStatus struct {
+	RoutineTokenSet bool `json:"routine_token_set"`
+	GitHubTokenSet  bool `json:"github_token_set"`
 }
 
 // DispatchRequest is POST /api/projects/{id}/dispatch's request body.

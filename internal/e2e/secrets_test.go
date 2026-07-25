@@ -84,6 +84,16 @@ func TestNoTokenShapedStringReachesClientOverHTTP(t *testing.T) {
 		{http.MethodGet, "/api/agents", nil},
 		{http.MethodPost, "/api/projects/" + project.ID + "/dispatch", api.DispatchRequest{TicketID: 3}},
 		{http.MethodPost, "/api/projects/" + project.ID + "/tickets/2/approve", nil},
+		// The new write-side routes (ticket 016) over real HTTP, plus a
+		// second registration carrying tokens in the request body itself.
+		{http.MethodPut, "/api/projects/" + project.ID + "/secrets", api.SetSecretsRequest{
+			RoutineToken: e2eRoutineToken, GitHubToken: e2eGitHubToken,
+		}},
+		{http.MethodGet, "/api/projects/" + project.ID + "/secrets", nil},
+		{http.MethodPost, "/api/projects", map[string]any{
+			"name": "Secrets Fixture 2", "repo_path": repo.Path,
+			"routine_token": e2eRoutineToken, "github_token": e2eGitHubToken,
+		}},
 	}
 
 	for _, c := range calls {

@@ -90,14 +90,15 @@ type AutopilotState struct {
 // AgentSession is one entry of GET /api/agents: a ticket currently
 // in_progress on a claude/NNN-* branch — an agent working right now (US-4).
 //
-// v1 sourcing note (ticket 008's handoff, a documented addition/deviation):
-// SessionURL is always "" — no source records a live routine session once
-// dispatched in v1 (a session URL is only ever seen once, in a dispatch
-// response, and is not persisted anywhere FlightDeck reads back from).
-// StartedAt and LastActivityAt are both best-effort filled with the
-// ticket's branch tip commit time (see gitHubSource.BranchCommitTime in
-// board.go) rather than true session start/heartbeat times, since no
-// source in v1 records those separately from the branch's own git history.
+// Sourcing note (ticket 019 closes the gap ticket 008's handoff documented):
+// LastActivityAt is always the ticket's branch tip commit time (see
+// gitHubSource.BranchCommitTime in board.go) — the honest v1 activity
+// signal, since no source records true heartbeats separately from git
+// history. SessionURL and StartedAt come from the server's in-memory
+// dispatchSessionStore (sessions.go) when this server itself dispatched the
+// ticket (a more accurate StartedAt than the branch's tip commit time); an
+// agent whose branch was never dispatched through this server has SessionURL
+// == "" and StartedAt falls back to the branch tip commit time too.
 type AgentSession struct {
 	ProjectID      string `json:"project_id"`
 	ProjectName    string `json:"project_name"`

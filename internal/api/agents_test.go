@@ -51,6 +51,9 @@ func TestListAgentsSynthesizesFromInProgressTicketsOnly(t *testing.T) {
 	if acme.StartedAt != wantTime || acme.LastActivityAt != wantTime {
 		t.Errorf("agent for ticket 2 timestamps = %+v, want both %q", acme, wantTime)
 	}
+	if acme.SessionURL != "" {
+		t.Errorf("agent for ticket 2 session_url = %q, want empty: never dispatched through this server", acme.SessionURL)
+	}
 
 	if _, ok := byTicket[5]; !ok {
 		t.Errorf("no agent session for ticket 5 (beta project): %+v", agents)
@@ -74,6 +77,59 @@ func TestListAgentsSkipsProjectWithUnreadableBoard(t *testing.T) {
 	agents := decodeJSON[[]AgentSession](t, rec)
 	if len(agents) != 0 {
 		t.Errorf("agents = %+v, want empty", agents)
+	}
+}
+
+// TestListAgentsFillsSessionURLFromDispatch is ticket 019's core acceptance
+// criterion end to end: dispatching a ready ticket records its session URL
+// and dispatch time, and once the board reflects that the ticket is now
+// in_progress (as it would once the routine pushes a claude/NNN-* branch),
+// GET /api/agents surfaces exactly that session_url and started_at — never
+// fabricated for a ticket this server did not dispatch.
+func TestListAgentsFillsSessionURLFromDispatch(t *testing.T) {
+	t.Parallel()
+	ts := newTestServer()
+	h := ts.srv.Handler()
+	must(t, ts.registry.Add(context.Background(), core.Project{ID: "acme", Name: "Acme", RepoPath: "/repos/acme"}))
+
+	ts.source.setBoard("acme", []core.BoardTicket{
+		{Ticket: core.Ticket{ID: 7, Title: "Fix the thing"}, Status: core.StatusReady},
+	})
+	const wantSessionURL = "https://routines.example.com/sessions/fromdispatch"
+	ts.dispatcher.forProject("acme").sessionURL = wantSessionURL
+
+	before := time.Now()
+	dispatchRec := doRequest(t, h, http.MethodPost, "/api/projects/acme/dispatch", DispatchRequest{TicketID: 7}, ts.token)
+	after := time.Now()
+	if dispatchRec.Code != http.StatusOK {
+		t.Fatalf("dispatch = %d, want 200: %s", dispatchRec.Code, dispatchRec.Body.String())
+	}
+
+	// Simulate the routine having pushed claude/007-fix-the-thing: the board
+	// now derives the ticket as in_progress, exactly as a real ProjectSource
+	// would once the branch exists with the file still todo.
+	ts.source.setBoard("acme", []core.BoardTicket{
+		{Ticket: core.Ticket{ID: 7, Title: "Fix the thing"}, Status: core.StatusInProgress, Branch: "claude/007-fix-the-thing"},
+	})
+
+	rec := doRequest(t, h, http.MethodGet, "/api/agents", nil, ts.token)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /api/agents = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	agents := decodeJSON[[]AgentSession](t, rec)
+	if len(agents) != 1 {
+		t.Fatalf("agents = %+v, want exactly 1", agents)
+	}
+	agent := agents[0]
+	if agent.SessionURL != wantSessionURL {
+		t.Errorf("session_url = %q, want %q", agent.SessionURL, wantSessionURL)
+	}
+	startedAt, err := time.Parse(time.RFC3339, agent.StartedAt)
+	if err != nil {
+		t.Fatalf("started_at = %q not RFC3339: %v", agent.StartedAt, err)
+	}
+	if startedAt.Before(before.Add(-time.Second)) || startedAt.After(after.Add(time.Second)) {
+		t.Errorf("started_at = %v, want within a second of the dispatch call [%v, %v]", startedAt, before, after)
 	}
 }
 

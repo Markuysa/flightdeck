@@ -12,12 +12,18 @@ import (
 // currently in_progress across every registered project — a claude/NNN-*
 // branch whose file still says todo is an agent working right now.
 //
-// v1 sourcing note (deviation documented in ticket 008's handoff):
-// SessionURL is always "" — no source records a live routine session once
-// dispatched, in v1. StartedAt and LastActivityAt are both filled with the
-// ticket's branch's tip commit time (best-effort; distinguishing "when
-// this branch started" from "its last activity" would require walking
-// full history against main, out of scope for v1).
+// SessionURL, StartedAt, and LastActivityAt sourcing (ticket 019 closes the
+// gap ticket 008's handoff documented): LastActivityAt always comes from the
+// branch tip's commit time (BranchCommitTime) — the most recent commit is
+// the most honest "last activity" signal available without a real heartbeat.
+// StartedAt defaults to that same commit time, but is overridden with the
+// server's own dispatchSessions-recorded dispatch time when this server is
+// the one that fired the ticket — that timestamp is more accurate than the
+// branch's tip commit time for when the session itself began. SessionURL
+// stays "" unless this server dispatched the ticket: agents whose branch
+// was not dispatched through this server (fired by hand, or before this
+// server's last restart — the store is in-memory only) simply have no URL,
+// which is honest, not fabricated.
 func (s *Server) handleListAgents(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	projects, err := s.registry.List(ctx)
@@ -58,6 +64,10 @@ func (s *Server) agentSession(ctx context.Context, p core.Project, t core.BoardT
 		iso := ts.Format(time.RFC3339)
 		agent.StartedAt = iso
 		agent.LastActivityAt = iso
+	}
+	if info, ok := s.dispatchSessions.Lookup(p.ID, t.ID); ok {
+		agent.SessionURL = info.sessionURL
+		agent.StartedAt = info.dispatchedAt.Format(time.RFC3339)
 	}
 	return agent
 }

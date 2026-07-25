@@ -3,7 +3,7 @@ id: 15
 title: README, quickstart, and demo mode
 role: dev
 depends: [13]
-status: todo
+status: done
 ---
 Make it runnable by a newcomer: README, and a `--demo` mode that registers a seeded fixture
 project so the UI is explorable with no real repo.

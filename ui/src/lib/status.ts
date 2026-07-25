@@ -21,3 +21,11 @@ export const STATUS_META: Record<DerivedStatus, { label: string; colorVar: strin
   blocked: { label: 'Blocked', colorVar: '--st-blocked' },
   done: { label: 'Done', colorVar: '--st-done' },
 }
+
+// The status's DESIGN.md §2.2 colour as a CSS value, resolved at render time
+// via the token variable — the one place a colour literal lives is tokens.css.
+// Use this for an element that IS a given status (a kanban lane, a card's own
+// status edge, a count of that status), never as a decorative accent (§2.2).
+export function statusColor(status: DerivedStatus): string {
+  return `var(${STATUS_META[status].colorVar})`
+}

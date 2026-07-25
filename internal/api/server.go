@@ -47,25 +47,27 @@ type Config struct {
 // Server serves the frozen REST + SSE contract described in
 // docs/ARCHITECTURE.md. Construct one with NewServer and mount Handler().
 type Server struct {
-	router     chi.Router
-	registry   ProjectRegistry
-	source     ProjectSource
-	dispatcher DispatcherFactory
-	events     *Broker
-	token      string
-	sessions   *sessionStore
+	router           chi.Router
+	registry         ProjectRegistry
+	source           ProjectSource
+	dispatcher       DispatcherFactory
+	events           *Broker
+	token            string
+	sessions         *sessionStore
+	dispatchSessions *dispatchSessionStore
 }
 
 // NewServer builds a Server from cfg and mounts every route in
 // docs/ARCHITECTURE.md's contract table.
 func NewServer(cfg Config) *Server {
 	s := &Server{
-		registry:   cfg.Registry,
-		source:     cfg.Source,
-		dispatcher: cfg.Dispatcher,
-		token:      cfg.Token,
-		sessions:   newSessionStore(),
-		events:     cfg.Events,
+		registry:         cfg.Registry,
+		source:           cfg.Source,
+		dispatcher:       cfg.Dispatcher,
+		token:            cfg.Token,
+		sessions:         newSessionStore(),
+		dispatchSessions: newDispatchSessionStore(),
+		events:           cfg.Events,
 	}
 	if s.events == nil {
 		s.events = NewBroker()

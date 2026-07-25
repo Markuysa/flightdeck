@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/Markuysa/flightdeck/internal/core"
 	"github.com/Markuysa/flightdeck/internal/dispatch"
@@ -95,6 +96,11 @@ func (s *Server) handleDispatch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
+
+	// Ticket 019: only a successful Fire is remembered — a failed dispatch
+	// records nothing, so a later GET /api/agents never fabricates a session
+	// for a ticket that was never actually fired.
+	s.dispatchSessions.Record(p.ID, target.ID, sessionURL, time.Now())
 
 	s.events.Publish(EventDispatchStarted, map[string]any{
 		"project_id":  p.ID,

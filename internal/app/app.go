@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/Markuysa/flightdeck/internal/api"
@@ -47,6 +48,14 @@ type Config struct {
 	// DBPath is the registry's SQLite file path (gitignored FlightDeck
 	// runtime state — never ticket status, ADR-001).
 	DBPath string
+	// RefreshInterval is FLIGHTDECK_REFRESH_INTERVAL: how often the
+	// background refresher (refresh.go) re-derives every registered
+	// project's board and publishes board.changed/ci.changed when it
+	// changed. <= 0 disables the refresher entirely — Run never starts it.
+	// Building a Config directly (not via ConfigFromEnv) with this left at
+	// its zero value gets the disabled behavior, matching Go's zero value
+	// for time.Duration; ConfigFromEnv is what applies the 5s default.
+	RefreshInterval time.Duration
 }
 
 // ConfigFromEnv builds a Config from the process environment:
@@ -55,6 +64,9 @@ type Config struct {
 //     token (api.constantTimeEqual itself never matches an empty value).
 //   - FLIGHTDECK_ADDR — optional, defaults to ":8080".
 //   - FLIGHTDECK_DB — optional, defaults to "flightdeck.db".
+//   - FLIGHTDECK_REFRESH_INTERVAL — optional, defaults to 5s; "off" or a
+//     duration <= 0 (e.g. "0") disables the background refresher (see
+//     parseRefreshInterval in refresh.go for the full rule).
 func ConfigFromEnv() (Config, error) {
 	token := os.Getenv("FLIGHTDECK_TOKEN")
 	if token == "" {
@@ -71,18 +83,26 @@ func ConfigFromEnv() (Config, error) {
 		dbPath = defaultDBPath
 	}
 
-	return Config{Token: token, Addr: addr, DBPath: dbPath}, nil
+	refreshInterval, err := parseRefreshInterval(os.Getenv("FLIGHTDECK_REFRESH_INTERVAL"))
+	if err != nil {
+		return Config{}, err
+	}
+
+	return Config{Token: token, Addr: addr, DBPath: dbPath, RefreshInterval: refreshInterval}, nil
 }
 
 // App is a fully wired FlightDeck server: the registry, the git+github
-// backed API source, the dispatcher factory, the API itself, and the
-// embedded UI, all mounted on one handler. Build one with New; it owns the
-// registry's lifecycle until Close.
+// backed API source, the dispatcher factory, the API itself, the embedded
+// UI, and the background refresher (refresh.go), all sharing one broker and
+// mounted on one handler. Build one with New; it owns the registry's
+// lifecycle until Close.
 type App struct {
-	cfg     Config
-	store   *registry.Store
-	apiSrv  *api.Server
-	handler http.Handler
+	cfg       Config
+	store     *registry.Store
+	apiSrv    *api.Server
+	handler   http.Handler
+	broker    *api.Broker
+	refresher *Refresher
 }
 
 // New builds an App from cfg: it opens the registry, wires the real
@@ -109,18 +129,27 @@ func New(cfg Config) (*App, error) {
 		return nil, fmt.Errorf("app: opening registry at %s: %w", cfg.DBPath, err)
 	}
 
+	// One broker, shared by the API server (SSE subscribers read from it)
+	// and the background refresher (it is the only thing that publishes
+	// board.changed/ci.changed outside of a request — see refresh.go and
+	// ticket 008's handoff).
+	broker := api.NewBroker()
+	source := api.NewGitHubSource(store)
+
 	apiSrv := api.NewServer(api.Config{
 		Token:      cfg.Token,
 		Registry:   store,
-		Source:     api.NewGitHubSource(store),
+		Source:     source,
 		Dispatcher: api.NewDispatcherFactory(store),
+		Events:     broker,
 	})
+	refresher := NewRefresher(broker, source, store, cfg.RefreshInterval)
 
 	mux := http.NewServeMux()
 	mux.Handle("/api/", apiSrv.Handler())
 	mux.Handle("/", webui.Handler())
 
-	return &App{cfg: cfg, store: store, apiSrv: apiSrv, handler: mux}, nil
+	return &App{cfg: cfg, store: store, apiSrv: apiSrv, handler: mux, broker: broker, refresher: refresher}, nil
 }
 
 // Handler returns the App's full http.Handler — the API under /api/ and the
@@ -128,10 +157,10 @@ func New(cfg Config) (*App, error) {
 // or driving directly in tests (httptest.NewServer, httptest.NewRequest).
 func (a *App) Handler() http.Handler { return a.handler }
 
-// Events returns the API server's event broker, for a caller that wants to
-// Publish board.changed/ci.changed from outside a request (docs/ARCHITECTURE.md
-// notes no background publisher is wired yet; ticket 008's handoff).
-func (a *App) Events() *api.Broker { return a.apiSrv.Events() }
+// Events returns the broker shared by the API server (SSE subscribers) and
+// the background refresher (refresh.go), for a caller that wants to Publish
+// board.changed/ci.changed itself.
+func (a *App) Events() *api.Broker { return a.broker }
 
 // Close releases the App's resources: the registry's database connection.
 func (a *App) Close() error { return a.store.Close() }
@@ -152,6 +181,12 @@ func (a *App) SeedDemo(ctx context.Context) (core.Project, error) {
 // the registry — call (*App).Close after Run returns, so a caller that
 // wants to log or report the final error can still do so with the registry
 // available.
+//
+// When cfg.RefreshInterval is enabled, Run also starts the background
+// refresher (refresh.go) in its own goroutine, sharing ctx: the same
+// cancellation that triggers the server's graceful shutdown stops the
+// refresher's poll loop too, and Run waits for it to return before Run
+// itself returns — no goroutine outlives Run.
 func (a *App) Run(ctx context.Context) error {
 	ln, err := net.Listen("tcp", a.cfg.Addr)
 	if err != nil {
@@ -159,6 +194,15 @@ func (a *App) Run(ctx context.Context) error {
 	}
 
 	srv := &http.Server{Handler: a.handler}
+
+	var refreshWG sync.WaitGroup
+	if a.cfg.RefreshInterval > 0 {
+		refreshWG.Add(1)
+		go func() {
+			defer refreshWG.Done()
+			a.refresher.Run(ctx)
+		}()
+	}
 
 	serveErr := make(chan error, 1)
 	go func() {
@@ -171,6 +215,7 @@ func (a *App) Run(ctx context.Context) error {
 
 	select {
 	case err := <-serveErr:
+		refreshWG.Wait()
 		return err
 	case <-ctx.Done():
 	}
@@ -178,7 +223,10 @@ func (a *App) Run(ctx context.Context) error {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
+		refreshWG.Wait()
 		return fmt.Errorf("app: shutting down server: %w", err)
 	}
-	return <-serveErr
+	err = <-serveErr
+	refreshWG.Wait()
+	return err
 }

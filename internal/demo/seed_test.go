@@ -8,6 +8,7 @@ import (
 	"github.com/Markuysa/flightdeck/internal/api"
 	"github.com/Markuysa/flightdeck/internal/core"
 	"github.com/Markuysa/flightdeck/internal/demo"
+	"github.com/Markuysa/flightdeck/internal/dispatch"
 	"github.com/Markuysa/flightdeck/internal/registry"
 )
 
@@ -74,5 +75,46 @@ func TestSeed_RegistersProjectWithTicketsAcrossSeveralStatuses(t *testing.T) {
 	// Seeding again must not fail on the duplicate id (idempotent-ish).
 	if _, err := demo.Seed(ctx, store); err != nil {
 		t.Fatalf("Seed a second time: %v", err)
+	}
+}
+
+// TestSeed_AutopilotRoundTrips proves the seeded repo carries a
+// .claude/autopilot.json so the dispatcher can read and flip autopilot —
+// i.e. the Fleet toggle (GET/PUT /api/projects/demo/autopilot) works against
+// the demo project, not just a real repo. Local file ops only, no network.
+func TestSeed_AutopilotRoundTrips(t *testing.T) {
+	ctx := context.Background()
+	store, err := registry.Open(filepath.Join(t.TempDir(), "registry.db"))
+	if err != nil {
+		t.Fatalf("registry.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	project, err := demo.Seed(ctx, store)
+	if err != nil {
+		t.Fatalf("Seed: %v", err)
+	}
+
+	// No tokens needed: Autopilot/SetAutopilot are local .claude/autopilot.json
+	// operations against project.RepoPath.
+	d := dispatch.New("", "")
+
+	on, err := d.Autopilot(ctx, project)
+	if err != nil {
+		t.Fatalf("Autopilot (initial read): %v", err)
+	}
+	if on {
+		t.Fatal("seeded autopilot = on, want off")
+	}
+
+	if err := d.SetAutopilot(ctx, project, true); err != nil {
+		t.Fatalf("SetAutopilot(true): %v", err)
+	}
+	on, err = d.Autopilot(ctx, project)
+	if err != nil {
+		t.Fatalf("Autopilot (after flip): %v", err)
+	}
+	if !on {
+		t.Fatal("autopilot after SetAutopilot(true) = off, want on")
 	}
 }

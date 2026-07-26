@@ -189,6 +189,9 @@ func buildRepo(ctx context.Context, repoDir string) error {
 			return fmt.Errorf("writing ticket %d: %w", ts.id, err)
 		}
 	}
+	if err := writeAutopilotFile(repoDir); err != nil {
+		return fmt.Errorf("writing autopilot file: %w", err)
+	}
 	if err := run("add", "-A"); err != nil {
 		return err
 	}
@@ -238,6 +241,24 @@ func writeTicket(repoDir string, ts ticketSpec) error {
 		ts.id, ts.title, ts.role, strings.Join(depends, ", "), ts.status, ts.body,
 	)
 	path := filepath.Join(repoDir, "docs", "tickets", filename(ts.id, ts.slug))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(content), 0o644) //nolint:gosec // demo fixture file, not sensitive
+}
+
+// writeAutopilotFile seeds .claude/autopilot.json in the demo repo so the
+// project's autopilot state can be read and flipped (GET/PUT
+// /api/projects/demo/autopilot, and the Fleet toggle). Without it the
+// dispatcher has no file to read and those calls fail.
+func writeAutopilotFile(repoDir string) error {
+	const content = `{
+  "enabled": false,
+  "maxInFlight": 1,
+  "note": "Demo autopilot switch. Flip it from the Fleet card to see the toggle round-trip .claude/autopilot.json."
+}
+`
+	path := filepath.Join(repoDir, ".claude", "autopilot.json")
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}

@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -31,6 +32,18 @@ type ProjectRegistry interface {
 	SetSecrets(ctx context.Context, id string, sec registry.Secrets) error
 }
 
+// RunStore records dispatches so a session link survives a restart, and so
+// the background scheduler can tell a ticket it already fired from one it has
+// not. registry.Store satisfies it structurally.
+//
+// Human-driven dispatch writes here for a reason beyond bookkeeping: without
+// a run record, a ticket a person just dispatched still reads `ready` until
+// its branch appears, and the scheduler would fire it a second time.
+type RunStore interface {
+	StartRun(ctx context.Context, projectID string, ticketID, attempt int, sessionURL string, at time.Time) (registry.Run, error)
+	LatestRun(ctx context.Context, projectID string, ticketID int) (registry.Run, bool, error)
+}
+
 // Config wires a Server's dependencies. Token is FLIGHTDECK_TOKEN's value —
 // required, compared constant-time against every bearer/session attempt.
 type Config struct {
@@ -38,6 +51,19 @@ type Config struct {
 	Registry   ProjectRegistry
 	Source     ProjectSource
 	Dispatcher DispatcherFactory
+	Runs       RunStore
+	// Agents resolves the agent configured for a ticket's role, so a dispatch
+	// carries that agent's prompt and skills. Optional: a nil Agents means
+	// every dispatch sends a bare briefing, exactly as before agents existed.
+	Agents AgentReader
+	// AgentStore is the CRUD surface behind the agent-configuration routes.
+	// Optional: nil makes those routes report 501 while everything else works.
+	AgentStore AgentStore
+	// Planner decomposes a goal into tickets. Optional: nil makes the planning
+	// routes report 501, which is the honest answer on a server with no API key.
+	Planner Planner
+	// RunHistory backs GET /runs. Optional: nil returns an empty history.
+	RunHistory RunHistoryReader
 	// Events is optional; a fresh Broker is used when nil. Callers that need
 	// to Publish board.changed/ci.changed from outside a request (e.g. a
 	// future background refresh loop) pass their own and keep a reference.
@@ -47,27 +73,35 @@ type Config struct {
 // Server serves the frozen REST + SSE contract described in
 // docs/ARCHITECTURE.md. Construct one with NewServer and mount Handler().
 type Server struct {
-	router           chi.Router
-	registry         ProjectRegistry
-	source           ProjectSource
-	dispatcher       DispatcherFactory
-	events           *Broker
-	token            string
-	sessions         *sessionStore
-	dispatchSessions *dispatchSessionStore
+	router     chi.Router
+	registry   ProjectRegistry
+	source     ProjectSource
+	dispatcher DispatcherFactory
+	runs       RunStore
+	agents     AgentReader
+	agentStore AgentStore
+	planner    Planner
+	runHistory RunHistoryReader
+	events     *Broker
+	token      string
+	sessions   *sessionStore
 }
 
 // NewServer builds a Server from cfg and mounts every route in
 // docs/ARCHITECTURE.md's contract table.
 func NewServer(cfg Config) *Server {
 	s := &Server{
-		registry:         cfg.Registry,
-		source:           cfg.Source,
-		dispatcher:       cfg.Dispatcher,
-		token:            cfg.Token,
-		sessions:         newSessionStore(),
-		dispatchSessions: newDispatchSessionStore(),
-		events:           cfg.Events,
+		registry:   cfg.Registry,
+		source:     cfg.Source,
+		dispatcher: cfg.Dispatcher,
+		runs:       cfg.Runs,
+		agents:     cfg.Agents,
+		agentStore: cfg.AgentStore,
+		planner:    cfg.Planner,
+		runHistory: cfg.RunHistory,
+		token:      cfg.Token,
+		sessions:   newSessionStore(),
+		events:     cfg.Events,
 	}
 	if s.events == nil {
 		s.events = NewBroker()
@@ -104,6 +138,12 @@ func (s *Server) buildRouter() chi.Router {
 		r.Get("/api/projects/{id}/autopilot", s.handleGetAutopilot)
 		r.Put("/api/projects/{id}/autopilot", s.handleSetAutopilot)
 		r.Post("/api/projects/{id}/tickets/{tid}/approve", s.handleApprove)
+		r.Post("/api/projects/{id}/plan", s.handleProposePlan)
+		r.Post("/api/projects/{id}/plan/apply", s.handleApplyPlan)
+		r.Get("/api/projects/{id}/agents", s.handleListAgentConfigs)
+		r.Post("/api/projects/{id}/agents", s.handleSaveAgent)
+		r.Delete("/api/projects/{id}/agents/{agentID}", s.handleDeleteAgent)
+		r.Get("/api/projects/{id}/runs", s.handleListRuns)
 		r.Get("/api/agents", s.handleListAgents)
 		r.Get("/api/events", s.handleEvents)
 	})

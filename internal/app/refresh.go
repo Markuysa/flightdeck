@@ -91,10 +91,15 @@ func fingerprintBoard(tickets []core.BoardTicket) boardFingerprint {
 // Refresher polls every registered project's derived board on an interval
 // and publishes board.changed/ci.changed to the same *api.Broker the SSE
 // server streams from, when a poll's fingerprint differs from the previous
-// one. It never dispatches, merges, or mutates anything — CLAUDE.md's "no
-// auto-anything on the server" — it only observes derive's output (exactly
-// what GET /api/projects/{id}/board would return) and notifies subscribers
-// that they should refetch.
+// one. It never dispatches, merges, or mutates anything: it only observes
+// derive's output (exactly what GET /api/projects/{id}/board would return)
+// and notifies subscribers that they should refetch.
+//
+// Starting work autonomously is internal/schedule's job, not this one's, and
+// it is off by default (ADR-007). Keeping the two loops separate is what lets
+// an operator run the live board with no autonomous dispatch at all — the
+// refresher costs nothing but a git read, while the scheduler spends agent
+// budget.
 type Refresher struct {
 	broker   *api.Broker
 	source   api.ProjectSource

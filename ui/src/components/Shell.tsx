@@ -1,6 +1,7 @@
 import { useState, type ComponentType } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { LayoutGrid, PanelLeftClose, PanelLeftOpen, Users } from 'lucide-react'
+import { useFlightDeckEvents } from '../lib/sse'
 
 interface NavItem {
   to: string
@@ -21,6 +22,9 @@ const NAV_ITEMS: NavItem[] = [
  */
 export function Shell() {
   const [collapsed, setCollapsed] = useState(false)
+  // One subscription for the whole app shell, purely to report whether the
+  // live stream is up. Screens keep their own subscriptions for refetching.
+  const connected = useFlightDeckEvents(() => {})
 
   return (
     <div className="flex min-h-screen flex-col bg-bg text-text sidebar:h-screen sidebar:flex-row">
@@ -70,9 +74,35 @@ export function Shell() {
             </NavLink>
           ))}
         </nav>
+
+        <div
+          className={[
+            'flex items-center gap-2 border-t border-border-soft px-4 py-2.5 text-xs',
+            collapsed ? 'sidebar:justify-center sidebar:px-0' : '',
+          ].join(' ')}
+          title={connected ? 'Live updates connected' : 'Live updates disconnected — reload to reconnect'}
+        >
+          <span
+            aria-hidden
+            className={[
+              'h-1.5 w-1.5 shrink-0 rounded-chip',
+              connected ? 'bg-st-done' : 'bg-st-attention',
+            ].join(' ')}
+          />
+          <span className={['text-text-dim', collapsed ? 'sidebar:hidden' : ''].join(' ')}>
+            {connected ? 'Live' : 'Offline'}
+          </span>
+          <span className="sr-only" role="status">
+            {connected ? 'Live updates connected' : 'Live updates disconnected'}
+          </span>
+        </div>
       </aside>
 
-      <main className="flex-1 overflow-auto">
+      {/* min-w-0 is load-bearing: without it this flex item refuses to
+          shrink below its content's width, so a wide child (the Board's lane
+          strip) pushes `main` wider than the viewport and the whole page —
+          heading included — scrolls sideways instead of just the lanes. */}
+      <main className="min-w-0 flex-1 overflow-y-auto">
         <Outlet />
       </main>
     </div>

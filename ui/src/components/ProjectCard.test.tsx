@@ -25,6 +25,7 @@ function summary(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
     name: 'FlightDeck',
     repo_path: '/repos/flightdeck',
     remote: '',
+    routine_trigger_id: '',
     owner: '',
     repo: '',
     counts: {

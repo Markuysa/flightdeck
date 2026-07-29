@@ -66,11 +66,15 @@ func newTempStore(t *testing.T) *registry.Store {
 func newHarness(t *testing.T, store *registry.Store, source api.ProjectSource, dispatcher api.DispatcherFactory) *harness {
 	t.Helper()
 
+	// Runs is the same *registry.Store: these end-to-end tests exercise the
+	// real SQLite-backed run recording, not a fake, so a dispatch here writes
+	// the row the scheduler would later read.
 	srv := api.NewServer(api.Config{
 		Token:      e2eToken,
 		Registry:   store,
 		Source:     source,
 		Dispatcher: dispatcher,
+		Runs:       store,
 	})
 
 	ts := httptest.NewServer(srv.Handler())

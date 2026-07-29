@@ -1,10 +1,11 @@
-import { KeyRound, Trash2 } from 'lucide-react'
+import { KeyRound, Sparkles, Trash2, Users } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { setAutopilot } from '../lib/api'
 import { STATUS_ORDER } from '../lib/status'
 import type { ProjectSummary } from '../lib/types'
 import { ManageTokensDialog } from './ManageTokensDialog'
+import { QueueBar } from './QueueBar'
 import { StatusChip } from './StatusChip'
 import { StatusDot } from './StatusDot'
 
@@ -74,10 +75,30 @@ export function ProjectCard({ project, onRemove }: ProjectCardProps) {
         </div>
       </header>
 
-      <div className="flex flex-wrap gap-1.5">
-        {STATUS_ORDER.map((status) => (
-          <StatusChip key={status} status={status} count={project.counts[status]} />
-        ))}
+      <div className="flex flex-col gap-2.5">
+        <QueueBar counts={project.counts} />
+        <div className="flex flex-wrap gap-1.5">
+          {STATUS_ORDER.map((status) => (
+            <StatusChip key={status} status={status} count={project.counts[status]} />
+          ))}
+        </div>
+      </div>
+
+      <div className="flex gap-1">
+        <Link
+          to={`/p/${encodeURIComponent(project.id)}/plan`}
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-nested border border-border-soft px-2 py-1.5 text-xs text-text-mut transition-colors duration-150 hover:border-border hover:text-text"
+        >
+          <Sparkles className="h-3.5 w-3.5" />
+          Plan
+        </Link>
+        <Link
+          to={`/p/${encodeURIComponent(project.id)}/agents`}
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-nested border border-border-soft px-2 py-1.5 text-xs text-text-mut transition-colors duration-150 hover:border-border hover:text-text"
+        >
+          <Users className="h-3.5 w-3.5" />
+          Agents
+        </Link>
       </div>
 
       <footer className="flex items-center justify-between gap-2 border-t border-border-soft pt-3 text-xs">

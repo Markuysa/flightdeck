@@ -122,23 +122,27 @@ func TestApproveMergeTokenNeverAppearsInErrorMessages(t *testing.T) {
 // TestFireAndApproveMergeAreSeparateCodePaths is the critical safety test:
 // it proves Fire and ApproveMerge never trigger each other. Dispatching a
 // ticket must never merge anything, and approving a merge must never fire a
-// routine — CLAUDE.md's "dispatches and merges only on explicit human
-// action; no auto-anything on the server."
+// routine.
+//
+// It matters more since the scheduler started dispatching on its own
+// (ADR-007). Autonomous dispatch is safe partly because Fire physically
+// cannot reach the merge endpoint — so unattended work always stops at an
+// open PR, where CI and a human still stand between it and main.
 func TestFireAndApproveMergeAreSeparateCodePaths(t *testing.T) {
 	t.Parallel()
 	responses := map[string]stubResponse{
-		"POST https://routines.example.test/fire":                      {status: 200, body: `{"session_url":"https://sessions.example.test/abc"}`},
+		"POST " + testRunURL: {status: 200, body: `{"session_url":"https://claude.ai/code/abc"}`},
 		"PUT https://api.github.com/repos/acme/widgets/pulls/42/merge": {status: 200, body: `{"merged":true,"message":"ok"}`},
 	}
 	rt := &recordingTransport{t: t, responses: responses}
 	c := New("routine-token", "gh-token",
 		WithHTTPClient(&http.Client{Transport: rt}),
-		WithRoutineBaseURL("https://routines.example.test"))
-	p := core.Project{ID: "widgets", Owner: "acme", Repo: "widgets"}
+		WithRoutineAPIBase("https://api.example.test"))
+	p := core.Project{ID: "widgets", Owner: "acme", Repo: "widgets", RoutineTriggerID: "trg_123"}
 
-	// Firing a ticket must issue only the /fire request — never a merge
-	// request.
-	if _, err := c.Fire(context.Background(), p, 7); err != nil {
+	// Firing a ticket must issue only the trigger-run request — never a
+	// merge request.
+	if _, err := c.Fire(context.Background(), p, 7, core.Briefing{}); err != nil {
 		t.Fatalf("Fire: %v", err)
 	}
 	for _, req := range rt.seen {
@@ -146,19 +150,19 @@ func TestFireAndApproveMergeAreSeparateCodePaths(t *testing.T) {
 			t.Fatalf("Fire triggered a merge request: %s", req)
 		}
 	}
-	if want := []string{"POST https://routines.example.test/fire"}; !reflect.DeepEqual(rt.seen, want) {
+	if want := []string{"POST " + testRunURL}; !reflect.DeepEqual(rt.seen, want) {
 		t.Fatalf("Fire issued requests %v, want exactly %v", rt.seen, want)
 	}
 
 	rt.seen = nil // reset the log before exercising ApproveMerge in isolation
 
 	// Approving the merge must issue only the merge request — never a
-	// /fire request.
+	// trigger-run request.
 	if err := c.ApproveMerge(context.Background(), p, 42); err != nil {
 		t.Fatalf("ApproveMerge: %v", err)
 	}
 	for _, req := range rt.seen {
-		if strings.Contains(req, "/fire") {
+		if strings.Contains(req, "/triggers/") {
 			t.Fatalf("ApproveMerge triggered a dispatch request: %s", req)
 		}
 	}

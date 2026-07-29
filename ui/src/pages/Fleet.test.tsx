@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as api from '../lib/api'
@@ -21,6 +21,7 @@ function summary(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
     name: 'FlightDeck',
     repo_path: '/repos/flightdeck',
     remote: '',
+    routine_trigger_id: '',
     owner: '',
     repo: '',
     counts: {
@@ -58,20 +59,25 @@ describe('Fleet', () => {
     renderFleet()
 
     expect(await screen.findByText('FlightDeck')).toBeInTheDocument()
-    expect(screen.getByText('/repos/flightdeck')).toBeInTheDocument()
+
+    // Scoped to the project's own card: the screen also carries fleet-wide
+    // totals now, so a bare getByText('2') would be ambiguous between a
+    // project's count and the fleet's sum of it.
+    const card = within(screen.getByRole('article'))
+    expect(card.getByText('/repos/flightdeck')).toBeInTheDocument()
     // One StatusChip per STATUS_ORDER entry, each labelled and counted.
-    expect(screen.getByText('Ready')).toBeInTheDocument()
-    expect(screen.getByText('In progress')).toBeInTheDocument()
-    expect(screen.getByText('In review')).toBeInTheDocument()
-    expect(screen.getByText('Needs attention')).toBeInTheDocument()
-    expect(screen.getByText('Blocked')).toBeInTheDocument()
-    expect(screen.getByText('Done')).toBeInTheDocument()
-    expect(screen.getByText('2')).toBeInTheDocument()
-    expect(screen.getByText('3')).toBeInTheDocument()
-    expect(screen.getByText('On')).toBeInTheDocument()
+    expect(card.getByText('Ready')).toBeInTheDocument()
+    expect(card.getByText('In progress')).toBeInTheDocument()
+    expect(card.getByText('In review')).toBeInTheDocument()
+    expect(card.getByText('Needs attention')).toBeInTheDocument()
+    expect(card.getByText('Blocked')).toBeInTheDocument()
+    expect(card.getByText('Done')).toBeInTheDocument()
+    expect(card.getByText('2')).toBeInTheDocument()
+    expect(card.getByText('3')).toBeInTheDocument()
+    expect(card.getByText('On')).toBeInTheDocument()
     // hasLiveAgent adds a second "In progress" dot (the live indicator)
     // beside the static one already inside the in_progress StatusChip.
-    expect(screen.getAllByRole('img', { name: 'In progress' })).toHaveLength(2)
+    expect(card.getAllByRole('img', { name: 'In progress' })).toHaveLength(2)
   })
 
   it('omits the live-agent dot when no agent is currently active', async () => {
@@ -108,6 +114,7 @@ describe('Fleet', () => {
       name: 'FlightDeck',
       repo_path: '/repos/flightdeck',
       remote: '',
+      routine_trigger_id: '',
       owner: '',
       repo: '',
     })
@@ -140,6 +147,7 @@ describe('Fleet', () => {
       name: 'FlightDeck',
       repo_path: '/repos/flightdeck',
       remote: '',
+      routine_trigger_id: '',
       owner: '',
       repo: '',
     })
@@ -165,6 +173,73 @@ describe('Fleet', () => {
         repo_path: '/repos/flightdeck',
         routine_token: 'routine-tok-test',
         github_token: 'gh-tok-test',
+      }),
+    )
+  })
+
+  // The routine trigger id is what makes a project dispatchable at all: a
+  // project registered without it renders its board but answers 409 to
+  // POST /dispatch. Dropping it silently on the way out of this form would
+  // take the product's one write action down with it, so pin that it is
+  // sent when filled and omitted when blank.
+  it('sends routine_trigger_id when filled, and omits it when blank', async () => {
+    mockedApi.listProjects.mockResolvedValue([])
+    mockedApi.createProject.mockResolvedValue({
+      id: 'flightdeck',
+      name: 'FlightDeck',
+      repo_path: '/repos/flightdeck',
+      remote: '',
+      routine_trigger_id: 'trg_abc123',
+      owner: '',
+      repo: '',
+    })
+    renderFleet()
+
+    await screen.findByText('No projects registered yet')
+    fireEvent.click(screen.getByRole('button', { name: /register project/i }))
+    fireEvent.change(screen.getByLabelText(/^name$/i), { target: { value: 'FlightDeck' } })
+    fireEvent.change(screen.getByLabelText(/repository path/i), {
+      target: { value: '/repos/flightdeck' },
+    })
+    fireEvent.change(screen.getByLabelText(/routine trigger id/i), {
+      target: { value: '  trg_abc123  ' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /^register$/i }))
+
+    await waitFor(() =>
+      expect(mockedApi.createProject).toHaveBeenCalledWith({
+        name: 'FlightDeck',
+        repo_path: '/repos/flightdeck',
+        routine_trigger_id: 'trg_abc123',
+      }),
+    )
+  })
+
+  it('omits routine_trigger_id when the field is left blank', async () => {
+    mockedApi.listProjects.mockResolvedValue([])
+    mockedApi.createProject.mockResolvedValue({
+      id: 'flightdeck',
+      name: 'FlightDeck',
+      repo_path: '/repos/flightdeck',
+      remote: '',
+      routine_trigger_id: '',
+      owner: '',
+      repo: '',
+    })
+    renderFleet()
+
+    await screen.findByText('No projects registered yet')
+    fireEvent.click(screen.getByRole('button', { name: /register project/i }))
+    fireEvent.change(screen.getByLabelText(/^name$/i), { target: { value: 'FlightDeck' } })
+    fireEvent.change(screen.getByLabelText(/repository path/i), {
+      target: { value: '/repos/flightdeck' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /^register$/i }))
+
+    await waitFor(() =>
+      expect(mockedApi.createProject).toHaveBeenCalledWith({
+        name: 'FlightDeck',
+        repo_path: '/repos/flightdeck',
       }),
     )
   })

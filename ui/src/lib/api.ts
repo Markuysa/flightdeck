@@ -6,14 +6,19 @@
 // The token itself is never written to localStorage or a URL, and never kept
 // in memory past the createSession() call.
 import type {
+  Agent,
   AgentSession,
+  Applied,
   AutopilotState,
   Board,
   CreateProjectRequest,
   DispatchRequest,
   DispatchResponse,
+  Plan,
   Project,
   ProjectSummary,
+  Run,
+  SaveAgentRequest,
   SecretsStatus,
   SetSecretsRequest,
   TicketDetail,
@@ -156,4 +161,50 @@ export function approveTicket(id: string, ticketId: number): Promise<void> {
 /** GET /api/agents — live agent sessions (US-4). */
 export function listAgents(): Promise<AgentSession[]> {
   return request<AgentSession[]>('/agents')
+}
+
+/** POST /api/projects/{id}/plan — decompose a goal into tickets. Proposes
+ * only; writes nothing until applyPlan. */
+export function proposePlan(projectId: string, goal: string): Promise<Plan> {
+  return request<Plan>(`/projects/${encodeURIComponent(projectId)}/plan`, {
+    method: 'POST',
+    body: JSON.stringify({ goal }),
+  })
+}
+
+/** POST /api/projects/{id}/plan/apply — write the approved plan's tickets.
+ * The plan is sent back verbatim, so what lands is what the operator saw
+ * (and any edit they made); the server revalidates it either way. */
+export function applyPlan(projectId: string, plan: Plan): Promise<Applied> {
+  return request<Applied>(`/projects/${encodeURIComponent(projectId)}/plan/apply`, {
+    method: 'POST',
+    body: JSON.stringify({ plan }),
+  })
+}
+
+/** GET /api/projects/{id}/agents — the project's configured specialists. */
+export function listAgentConfigs(projectId: string): Promise<Agent[]> {
+  return request<Agent[]>(`/projects/${encodeURIComponent(projectId)}/agents`)
+}
+
+/** POST /api/projects/{id}/agents — configure the agent for one role,
+ * replacing whatever held that role before. */
+export function saveAgent(projectId: string, body: SaveAgentRequest): Promise<Agent> {
+  return request<Agent>(`/projects/${encodeURIComponent(projectId)}/agents`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+/** DELETE /api/projects/{id}/agents/{agentId} */
+export function deleteAgent(projectId: string, agentId: string): Promise<void> {
+  return request<void>(
+    `/projects/${encodeURIComponent(projectId)}/agents/${encodeURIComponent(agentId)}`,
+    { method: 'DELETE' },
+  )
+}
+
+/** GET /api/projects/{id}/runs — dispatch history, most recent first. */
+export function listRuns(projectId: string): Promise<Run[]> {
+  return request<Run[]>(`/projects/${encodeURIComponent(projectId)}/runs`)
 }

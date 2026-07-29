@@ -3,7 +3,9 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"time"
 
@@ -21,13 +23,20 @@ type DispatcherFactory interface {
 }
 
 type gitHubDispatcherFactory struct {
-	secrets SecretsReader
+	secrets        SecretsReader
+	routineAPIBase string
 }
 
 // NewDispatcherFactory returns the real DispatcherFactory, sourcing each
-// project's routine and GitHub tokens from secrets.
-func NewDispatcherFactory(secrets SecretsReader) DispatcherFactory {
-	return &gitHubDispatcherFactory{secrets: secrets}
+// project's routine and GitHub tokens from secrets and pointing every
+// dispatch at routineAPIBase (the claude.ai remote-trigger API root). An
+// empty routineAPIBase falls back to dispatch.DefaultRoutineAPIBase, so a
+// caller that does not care about overriding it can pass "".
+func NewDispatcherFactory(secrets SecretsReader, routineAPIBase string) DispatcherFactory {
+	if routineAPIBase == "" {
+		routineAPIBase = dispatch.DefaultRoutineAPIBase
+	}
+	return &gitHubDispatcherFactory{secrets: secrets, routineAPIBase: routineAPIBase}
 }
 
 func (f *gitHubDispatcherFactory) Dispatcher(ctx context.Context, p core.Project) (core.Dispatcher, error) {
@@ -35,7 +44,8 @@ func (f *gitHubDispatcherFactory) Dispatcher(ctx context.Context, p core.Project
 	if err != nil {
 		return nil, fmt.Errorf("reading secrets for project %q: %w", p.ID, err)
 	}
-	return dispatch.New(sec.RoutineToken, sec.GitHubToken), nil
+	return dispatch.New(sec.RoutineToken, sec.GitHubToken,
+		dispatch.WithRoutineAPIBase(f.routineAPIBase)), nil
 }
 
 // findTicket returns the BoardTicket with id from tickets, if present.
@@ -85,9 +95,18 @@ func (s *Server) handleDispatch(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to prepare dispatch")
 		return
 	}
-	sessionURL, err := d.Fire(ctx, p, target.ID)
-	if err != nil {
-		// ARCHITECTURE.md's failure policy for the routine /fire endpoint:
+	sessionURL, err := d.Fire(ctx, p, target.ID, s.briefingFor(ctx, p, target, body.Notes))
+	switch {
+	case errors.Is(err, dispatch.ErrNoRoutineTrigger):
+		// Not a routine failure — the project was registered without a
+		// routine trigger, so there is nothing to fire. 409 (like a
+		// not-ready ticket) rather than 502: the fix is registering the
+		// trigger, not retrying against a broken upstream.
+		writeError(w, http.StatusConflict,
+			"this project has no routine trigger configured — register one to dispatch tickets")
+		return
+	case err != nil:
+		// ARCHITECTURE.md's failure policy for the routine trigger:
 		// "dispatch failure surfaces to the user with the error; never
 		// silently retried". dispatch.ErrDispatchFailed never embeds a
 		// token — only the Authorization header ever carries one, and
@@ -97,10 +116,15 @@ func (s *Server) handleDispatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ticket 019: only a successful Fire is remembered — a failed dispatch
-	// records nothing, so a later GET /api/agents never fabricates a session
-	// for a ticket that was never actually fired.
-	s.dispatchSessions.Record(p.ID, target.ID, sessionURL, time.Now())
+	// Only a successful Fire is remembered — a failed dispatch records
+	// nothing, so a later GET /api/agents never fabricates a session for a
+	// ticket that was never actually fired. A failure to record is logged,
+	// not surfaced: the routine really is running, and reporting the dispatch
+	// as failed would be the bigger lie.
+	if _, err := s.recordDispatch(ctx, p.ID, target.ID, sessionURL, time.Now()); err != nil {
+		log.Printf("flightdeck: api: project %q ticket %d: dispatched but failed to record the run: %v",
+			p.ID, target.ID, err)
+	}
 
 	s.events.Publish(EventDispatchStarted, map[string]any{
 		"project_id":  p.ID,

@@ -42,11 +42,17 @@ type TicketDetail struct {
 // never echoed back in the response (handleCreateProject returns a bare
 // core.Project, which carries no secret field by construction).
 type CreateProjectRequest struct {
-	Name         string `json:"name"`
-	RepoPath     string `json:"repo_path"`
-	RoutineToken string `json:"routine_token,omitempty"`
-	GitHubToken  string `json:"github_token,omitempty"`
-	GitHub       *struct {
+	Name     string `json:"name"`
+	RepoPath string `json:"repo_path"`
+	// RoutineTriggerID names the Claude routine that implements this
+	// project's tickets. Optional: a project registered without it renders
+	// its board normally but cannot be dispatched (409 from
+	// POST /dispatch), which is the honest answer to "run this ticket" on
+	// a project that has no runner wired up.
+	RoutineTriggerID string `json:"routine_trigger_id,omitempty"`
+	RoutineToken     string `json:"routine_token,omitempty"`
+	GitHubToken      string `json:"github_token,omitempty"`
+	GitHub           *struct {
 		Owner string `json:"owner"`
 		Repo  string `json:"repo"`
 	} `json:"github,omitempty"`
@@ -74,6 +80,11 @@ type SecretsStatus struct {
 // DispatchRequest is POST /api/projects/{id}/dispatch's request body.
 type DispatchRequest struct {
 	TicketID int `json:"ticket_id"`
+	// Notes is an optional per-dispatch refinement the operator types before
+	// firing — "use the v2 endpoint", "don't touch the migration". It rides
+	// along to the routine in the briefing and is not persisted: it is advice
+	// about THIS attempt, not a property of the ticket.
+	Notes string `json:"notes,omitempty"`
 }
 
 // DispatchResponse is POST /api/projects/{id}/dispatch's response body: the

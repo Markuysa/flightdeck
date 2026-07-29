@@ -19,6 +19,10 @@ export interface Project {
   remote: 'github' | ''
   owner: string
   repo: string
+  /** The Claude routine that implements this project's tickets. An
+   * identifier, not a secret — the routine's bearer token stays server-side
+   * (ADR-005). Empty means the project cannot be dispatched. */
+  routine_trigger_id: string
 }
 
 /** A Project as returned by GET /api/projects: registration plus per-status
@@ -69,6 +73,9 @@ export interface CreateProjectRequest {
   name: string
   repo_path: string
   github?: { owner: string; repo: string }
+  /** Optional. Without it the project registers fine and its board renders,
+   * but POST /dispatch answers 409 — there is no routine to run. */
+  routine_trigger_id?: string
   /** Optional — set via registry.SetSecrets right after registration, never
    * echoed back by POST /api/projects. Omit or leave blank to register
    * without a token. */
@@ -113,4 +120,69 @@ export interface AgentSession {
   session_url: string
   started_at: string
   last_activity_at: string
+}
+
+/** internal/core.Agent — a configured specialist, not a live session. The two
+ * unavoidably share a word; `Agent` is the configuration, `AgentSession`
+ * (above) is one currently working. */
+export interface Agent {
+  id: string
+  name: string
+  role: string
+  prompt: string
+  skills: string[]
+  project_id: string
+}
+
+/** The roles a ticket (and therefore an agent) can carry. Mirrors
+ * internal/plan.Roles. */
+export const ROLES = ['designer', 'frontend', 'backend', 'qa', 'dev'] as const
+export type Role = (typeof ROLES)[number]
+
+/** internal/plan.Ticket — one ticket in a proposal, before it exists on disk.
+ * `number` is plan-local; real ids are assigned at apply time. */
+export interface PlanTicket {
+  number: number
+  title: string
+  role: string
+  depends: number[]
+  body: string
+  acceptance: string[]
+  handoff: string
+}
+
+/** internal/plan.Plan — a proposed decomposition, for review before applying. */
+export interface Plan {
+  goal: string
+  summary: string
+  tickets: PlanTicket[]
+  model: string
+  created_at: string
+}
+
+/** internal/plan.Applied — what applying a plan created. */
+export interface Applied {
+  files: string[]
+  ids: number[]
+}
+
+/** internal/api.RunSummary — one dispatch attempt and how it ended. This is
+ * history the board cannot show: the board holds current state, runs hold
+ * attempts, including the failed and timed-out ones that leave no git trace. */
+export interface Run {
+  id: number
+  ticket_id: number
+  attempt: number
+  state: 'running' | 'observed' | 'timed_out' | 'failed'
+  session_url: string
+  detail: string
+  started_at: string
+  settled_at: string
+}
+
+export interface SaveAgentRequest {
+  name: string
+  role: string
+  prompt: string
+  skills: string[]
 }

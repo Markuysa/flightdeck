@@ -16,6 +16,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/Markuysa/flightdeck/internal/core"
 )
@@ -33,11 +36,27 @@ const apiBaseURL = "https://api.github.com"
 // GitHub REST.
 var ErrGitHubUnavailable = errors.New("github: unavailable")
 
+// ErrRateLimited is returned when GitHub has refused a request for rate-limit
+// reasons, or when a previous refusal is still in effect. It deliberately
+// wraps ErrGitHubUnavailable so the existing downgrade path keeps working
+// unchanged — a rate-limited board still renders from git alone with CI
+// "unknown" — while a caller that wants to say something more specific can
+// test for this sentinel instead.
+var ErrRateLimited = fmt.Errorf("%w: rate limited", ErrGitHubUnavailable)
+
+// maxResponseBytes caps how much of a response is read into memory. The
+// largest response this client asks for is 100 pull requests; 8 MiB is far
+// above that and still bounded, which matters because bodies are now buffered
+// (rather than stream-decoded) so they can be cached for revalidation.
+const maxResponseBytes = 8 << 20
+
 // Client implements core.PRReader for one owner/repo.
 type Client struct {
 	owner, repo string
 	token       string
 	httpClient  *http.Client
+	cache       *Cache
+	now         func() time.Time
 }
 
 var _ core.PRReader = (*Client)(nil)
@@ -52,13 +71,33 @@ func WithHTTPClient(hc *http.Client) Option {
 	return func(c *Client) { c.httpClient = hc }
 }
 
+// WithCache shares a conditional-request cache with this Client. Pass the
+// same *Cache to every Client in the process: Clients are rebuilt per board
+// read, so a cache scoped to one would never be reused (see Cache's doc
+// comment). Without this option the Client makes unconditional requests.
+func WithCache(cache *Cache) Option {
+	return func(c *Client) { c.cache = cache }
+}
+
+// withNow overrides the clock, for tests that need to cross a rate-limit
+// reset without sleeping. Unexported: production has exactly one clock.
+func withNow(now func() time.Time) Option {
+	return func(c *Client) { c.now = now }
+}
+
 // New returns a Client reading owner/repo's open PRs with token. token is a
 // constructor parameter only — it is never hardcoded here, and the caller
 // (the registry, ticket 006, or an environment variable) owns sourcing it.
 // The client never logs or otherwise surfaces token outside the
 // Authorization header it sends (see get's doc comment).
 func New(owner, repo, token string, opts ...Option) *Client {
-	c := &Client{owner: owner, repo: repo, token: token, httpClient: http.DefaultClient}
+	c := &Client{
+		owner:      owner,
+		repo:       repo,
+		token:      token,
+		httpClient: http.DefaultClient,
+		now:        time.Now,
+	}
 	for _, opt := range opts {
 		opt(c)
 	}
@@ -103,15 +142,30 @@ func (c *Client) OpenPRs(ctx context.Context) (map[string]core.PRState, error) {
 	return states, nil
 }
 
-// get performs an authenticated GET against url and decodes the JSON
-// response body into out. Any failure — building the request, the
+// get performs an authenticated, conditional GET against url and decodes the
+// JSON response body into out. Any failure — building the request, the
 // transport, a non-2xx status, or a malformed body — comes back wrapped in
 // ErrGitHubUnavailable.
+//
+// Conditional requests are the point. When the cache holds an ETag for url,
+// it is sent as If-None-Match; GitHub answers 304 and the cached body is
+// decoded instead. GitHub does not charge a 304 against the REST rate limit,
+// which is what keeps a 5s refresher over several projects from exhausting
+// the hourly budget. The board is still derived from those bytes on every
+// read — only the transfer is skipped, never the derivation (ADR-001).
+//
+// Rate limiting is handled in both directions: a refusal is recorded with its
+// reset time so every later request fails fast until then, and the refusal
+// itself comes back as ErrRateLimited.
 //
 // Token safety: the token is set only on the request's Authorization
 // header, never interpolated into url or any error string this method (or
 // its callers) builds, so it cannot leak into logs or returned errors.
 func (c *Client) get(ctx context.Context, url string, out any) error {
+	if reset, limited := c.cache.rateLimitedUntilTime(c.now()); limited {
+		return fmt.Errorf("%w: %s refused until %s", ErrRateLimited, url, reset.UTC().Format(time.RFC3339))
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return fmt.Errorf("%w: building request for %s: %w", ErrGitHubUnavailable, url, err)
@@ -120,19 +174,79 @@ func (c *Client) get(ctx context.Context, url string, out any) error {
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 
+	cached, hasCached := c.cache.lookup(url)
+	if hasCached {
+		req.Header.Set("If-None-Match", cached.etag)
+	}
+
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("%w: requesting %s: %w", ErrGitHubUnavailable, url, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
+	if resp.StatusCode == http.StatusNotModified {
+		if !hasCached {
+			// GitHub answered 304 to a request we never conditioned. Treat
+			// it as unavailable rather than inventing an empty result.
+			return fmt.Errorf("%w: %s returned 304 without a cached body", ErrGitHubUnavailable, url)
+		}
+		if err := json.Unmarshal(cached.body, out); err != nil {
+			return fmt.Errorf("%w: decoding cached response for %s: %w", ErrGitHubUnavailable, url, err)
+		}
+		return nil
+	}
+
+	if reset, limited := rateLimitReset(resp, c.now()); limited {
+		c.cache.setRateLimitedUntil(reset)
+		return fmt.Errorf("%w: %s returned %d, resets at %s",
+			ErrRateLimited, url, resp.StatusCode, reset.UTC().Format(time.RFC3339))
+	}
+
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 		return fmt.Errorf("%w: %s returned %d: %s", ErrGitHubUnavailable, url, resp.StatusCode, body)
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
+	if err != nil {
+		return fmt.Errorf("%w: reading response from %s: %w", ErrGitHubUnavailable, url, err)
+	}
+	if err := json.Unmarshal(body, out); err != nil {
 		return fmt.Errorf("%w: decoding response from %s: %w", ErrGitHubUnavailable, url, err)
 	}
+	c.cache.store(url, resp.Header.Get("ETag"), body)
 	return nil
+}
+
+// rateLimitReset reports whether resp is GitHub refusing us for rate-limit
+// reasons, and when the limit is expected to reset.
+//
+// GitHub signals this three ways, and this checks all of them: a 429; a 403
+// carrying X-RateLimit-Remaining: 0 (the primary limit); or either status
+// carrying Retry-After (the secondary/abuse limit). A plain 403 without those
+// headers is an authorization failure, not a rate limit, and is deliberately
+// not treated as one — retrying later would never fix it.
+func rateLimitReset(resp *http.Response, now time.Time) (time.Time, bool) {
+	if retryAfter := resp.Header.Get("Retry-After"); retryAfter != "" {
+		if secs, err := strconv.Atoi(strings.TrimSpace(retryAfter)); err == nil && secs >= 0 {
+			return now.Add(time.Duration(secs) * time.Second), true
+		}
+	}
+
+	if resp.StatusCode != http.StatusForbidden && resp.StatusCode != http.StatusTooManyRequests {
+		return time.Time{}, false
+	}
+	if strings.TrimSpace(resp.Header.Get("X-RateLimit-Remaining")) != "0" {
+		return time.Time{}, false
+	}
+
+	if reset := strings.TrimSpace(resp.Header.Get("X-RateLimit-Reset")); reset != "" {
+		if unix, err := strconv.ParseInt(reset, 10, 64); err == nil {
+			return time.Unix(unix, 0), true
+		}
+	}
+	// Remaining is 0 but the reset time is missing or unparseable: back off
+	// for GitHub's standard one-hour window rather than hammering blind.
+	return now.Add(time.Hour), true
 }

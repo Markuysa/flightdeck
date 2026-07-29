@@ -14,7 +14,10 @@ export default {
     // override with `sidebar:`/`board:` for the wider layout.
     screens: {
       sidebar: '861px', // above this width, the sidebar is a sidebar, not a top bar
-      board: '1280px', // above this width, the kanban stops horizontal-scrolling
+      // No `board` breakpoint: it used to switch the kanban out of
+      // horizontal scrolling at 1280px, but six 300px lanes need ~1880px, so
+      // above it the lanes overflowed and the page scrolled instead. The
+      // lane strip now owns its scroll at every width (see pages/Board.tsx).
     },
     // Replaces Tailwind's default palette outright so only design tokens are
     // ever available as colour utilities (no stray `bg-red-500`).

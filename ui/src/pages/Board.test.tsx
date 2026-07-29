@@ -159,6 +159,7 @@ describe('Board', () => {
     let handler: ((event: sse.FlightDeckEvent) => void) | undefined
     mockedSse.useFlightDeckEvents.mockImplementation((cb) => {
       handler = cb
+      return true
     })
     mockedApi.getBoard.mockResolvedValue(
       boardFixture({ ready: [ticket({ id: 1, title: 'One', role: 'backend' })] }),

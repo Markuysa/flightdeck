@@ -14,4 +14,13 @@ type Project struct {
 	Remote   string `json:"remote"`    // "github" | "" (local-only)
 	Owner    string `json:"owner"`     // github owner/repo, when Remote == "github"
 	Repo     string `json:"repo"`
+
+	// RoutineTriggerID names the Claude routine that implements this
+	// project's tickets: dispatching ticket N runs that trigger, and the
+	// routine picks the work up from there. It is an identifier, not a
+	// secret — the routine's bearer token is what authorizes the call, and
+	// that lives in registry.Secrets, never here (ADR-005). A project with
+	// an empty RoutineTriggerID simply cannot be dispatched; its board
+	// still derives and renders normally.
+	RoutineTriggerID string `json:"routine_trigger_id"`
 }

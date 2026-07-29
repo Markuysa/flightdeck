@@ -4,7 +4,9 @@ import { Shell } from './components/Shell'
 import { Fleet } from './pages/Fleet'
 import { Board } from './pages/Board'
 import { Ticket } from './pages/Ticket'
+import { AgentConfig } from './pages/AgentConfig'
 import { Agents } from './pages/Agents'
+import { Plan } from './pages/Plan'
 import { Login } from './pages/Login'
 import { ApiError, listProjects } from './lib/api'
 
@@ -49,6 +51,8 @@ export function App() {
         <Route path="/p/:id" element={<Board />} />
         <Route path="/p/:id/t/:tid" element={<Ticket />} />
         <Route path="/agents" element={<Agents />} />
+        <Route path="/p/:id/plan" element={<Plan />} />
+        <Route path="/p/:id/agents" element={<AgentConfig />} />
       </Route>
     </Routes>
   )

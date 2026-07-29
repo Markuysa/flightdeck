@@ -2,6 +2,7 @@ package registry
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"go/parser"
@@ -293,4 +294,93 @@ func TestNoOtherInternalImports(t *testing.T) {
 			}
 		}
 	}
+}
+
+// TestRoutineTriggerIDRoundTrips: the trigger id must survive Add -> Get and
+// Add -> List, against a real file. It is what makes a project dispatchable
+// at all, so losing it silently would take the product's one write action
+// down with it.
+func TestRoutineTriggerIDRoundTrips(t *testing.T) {
+	t.Parallel()
+	store := openTestStore(t)
+	ctx := context.Background()
+
+	want := core.Project{ID: "acme", Name: "Acme", RepoPath: "/repos/acme", RoutineTriggerID: "trg_abc123"}
+	if err := store.Add(ctx, want); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	got, err := store.Get(ctx, "acme")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.RoutineTriggerID != want.RoutineTriggerID {
+		t.Errorf("Get().RoutineTriggerID = %q, want %q", got.RoutineTriggerID, want.RoutineTriggerID)
+	}
+
+	list, err := store.List(ctx)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(list) != 1 || list[0].RoutineTriggerID != want.RoutineTriggerID {
+		t.Errorf("List() = %+v, want one project with RoutineTriggerID %q", list, want.RoutineTriggerID)
+	}
+}
+
+// TestMigrateAddsTriggerColumnToPreExistingDatabase is the real risk in
+// adding a column: CREATE TABLE IF NOT EXISTS is a no-op against a database
+// an older FlightDeck already created, so without the ALTER path in
+// migrations.go every upgrade would break on "no such column" the first time
+// it read a project. This builds the OLD schema by hand, then opens it with
+// the current code and asserts the upgrade is transparent.
+func TestMigrateAddsTriggerColumnToPreExistingDatabase(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "old.db")
+
+	old, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("opening raw database: %v", err)
+	}
+	_, err = old.Exec(`
+		CREATE TABLE projects (
+			id        TEXT PRIMARY KEY,
+			name      TEXT NOT NULL,
+			repo_path TEXT NOT NULL,
+			remote    TEXT NOT NULL DEFAULT '',
+			owner     TEXT NOT NULL DEFAULT '',
+			repo      TEXT NOT NULL DEFAULT ''
+		);
+		INSERT INTO projects (id, name, repo_path) VALUES ('legacy', 'Legacy', '/repos/legacy');
+	`)
+	if err != nil {
+		t.Fatalf("building pre-migration schema: %v", err)
+	}
+	if err := old.Close(); err != nil {
+		t.Fatalf("closing raw database: %v", err)
+	}
+
+	store, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open on a pre-migration database: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	got, err := store.Get(context.Background(), "legacy")
+	if err != nil {
+		t.Fatalf("Get on a migrated database: %v", err)
+	}
+	if got.Name != "Legacy" {
+		t.Errorf("Get().Name = %q, want %q — the existing row must survive the migration", got.Name, "Legacy")
+	}
+	if got.RoutineTriggerID != "" {
+		t.Errorf("Get().RoutineTriggerID = %q, want empty for a row that predates the column", got.RoutineTriggerID)
+	}
+
+	// And the migration must be idempotent: reopening must not fail on a
+	// duplicate-column error.
+	again, err := Open(path)
+	if err != nil {
+		t.Fatalf("reopening an already-migrated database: %v", err)
+	}
+	_ = again.Close()
 }

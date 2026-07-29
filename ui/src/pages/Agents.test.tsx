@@ -87,6 +87,7 @@ describe('Agents', () => {
     let handler: ((event: sse.FlightDeckEvent) => void) | undefined
     mockedSse.useFlightDeckEvents.mockImplementation((cb) => {
       handler = cb
+      return true
     })
     mockedApi.listAgents.mockResolvedValue([session()])
     renderAgents()

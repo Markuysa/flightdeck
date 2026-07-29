@@ -65,9 +65,9 @@ func (s *Server) agentSession(ctx context.Context, p core.Project, t core.BoardT
 		agent.StartedAt = iso
 		agent.LastActivityAt = iso
 	}
-	if info, ok := s.dispatchSessions.Lookup(p.ID, t.ID); ok {
-		agent.SessionURL = info.sessionURL
-		agent.StartedAt = info.dispatchedAt.Format(time.RFC3339)
+	if run, ok := s.lastDispatch(ctx, p.ID, t.ID); ok {
+		agent.SessionURL = run.SessionURL
+		agent.StartedAt = run.StartedAt.Format(time.RFC3339)
 	}
 	return agent
 }

@@ -42,7 +42,7 @@ func newStubDispatcher() *stubDispatcher {
 	return &stubDispatcher{sessionURL: "https://routines.example.com/sessions/e2e-fixture"}
 }
 
-func (d *stubDispatcher) Fire(_ context.Context, p core.Project, ticketID int) (string, error) {
+func (d *stubDispatcher) Fire(_ context.Context, p core.Project, ticketID int, _ core.Briefing) (string, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.fireCalls = append(d.fireCalls, fireCall{ProjectID: p.ID, TicketID: ticketID})

@@ -29,6 +29,7 @@ export function RegisterProjectDialog({ onClose, onRegister }: RegisterProjectDi
   const [repoPath, setRepoPath] = useState('')
   const [owner, setOwner] = useState('')
   const [repo, setRepo] = useState('')
+  const [routineTriggerId, setRoutineTriggerId] = useState('')
   const [routineToken, setRoutineToken] = useState('')
   const [githubToken, setGithubToken] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -66,6 +67,7 @@ export function RegisterProjectDialog({ onClose, onRegister }: RegisterProjectDi
         name: name.trim(),
         repo_path: repoPath.trim(),
         ...(owner.trim() && repo.trim() ? { github: { owner: owner.trim(), repo: repo.trim() } } : {}),
+        ...(routineTriggerId.trim() ? { routine_trigger_id: routineTriggerId.trim() } : {}),
         ...(routineToken.trim() ? { routine_token: routineToken.trim() } : {}),
         ...(githubToken.trim() ? { github_token: githubToken.trim() } : {}),
       })
@@ -110,6 +112,19 @@ export function RegisterProjectDialog({ onClose, onRegister }: RegisterProjectDi
               placeholder="/path/to/repo"
               className={[INPUT_CLASS, 'font-mono'].join(' ')}
             />
+          </label>
+          <label className="flex flex-col gap-1.5 text-sm text-text-mut">
+            Routine trigger ID <span className="text-text-dim">(optional)</span>
+            <input
+              value={routineTriggerId}
+              onChange={(event) => setRoutineTriggerId(event.target.value)}
+              placeholder="trg_…"
+              className={[INPUT_CLASS, 'font-mono'].join(' ')}
+            />
+            <span className="text-xs text-text-dim">
+              The Claude routine that implements this project&rsquo;s tickets. Without it the board
+              still renders, but tickets can&rsquo;t be dispatched.
+            </span>
           </label>
           <div className="grid grid-cols-2 gap-3">
             <label className="flex flex-col gap-1.5 text-sm text-text-mut">

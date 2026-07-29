@@ -48,10 +48,15 @@ type mergeResponse struct {
 // endpoint — the two methods build entirely separate requests to entirely
 // separate URLs (the routine's /fire vs. GitHub's pulls/.../merge), so there
 // is no code path where dispatching a ticket implies merging its PR.
-// merge_test.go's TestFireAndApproveMergeAreSeparateCodePaths asserts
-// this directly against a request-recording transport. This is what
-// CLAUDE.md's "dispatches and merges only on explicit human action; no
-// auto-anything on the server" requires in code, not just in a doc comment.
+// merge_test.go's TestFireAndApproveMergeAreSeparateCodePaths asserts this
+// directly against a request-recording transport.
+//
+// This separation became more load-bearing, not less, once dispatch stopped
+// being human-only (ADR-007): the scheduler fires tickets by itself, and the
+// fact that Fire cannot reach this endpoint is part of why that is safe.
+// internal/schedule never calls ApproveMerge — asserted there by
+// TestSchedulerNeverMerges — so merging stays a human action, or the
+// routine's own auto-merge behind a CI gate.
 func (c *Client) ApproveMerge(ctx context.Context, p core.Project, prNumber int) error {
 	url := fmt.Sprintf("%s/repos/%s/%s/pulls/%d/merge", githubAPIBaseURL, p.Owner, p.Repo, prNumber)
 

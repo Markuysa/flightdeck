@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -19,7 +20,9 @@ import (
 	"github.com/Markuysa/flightdeck/internal/api"
 	"github.com/Markuysa/flightdeck/internal/core"
 	"github.com/Markuysa/flightdeck/internal/demo"
+	"github.com/Markuysa/flightdeck/internal/plan"
 	"github.com/Markuysa/flightdeck/internal/registry"
+	"github.com/Markuysa/flightdeck/internal/schedule"
 	"github.com/Markuysa/flightdeck/internal/webui"
 )
 
@@ -48,6 +51,20 @@ type Config struct {
 	// DBPath is the registry's SQLite file path (gitignored FlightDeck
 	// runtime state — never ticket status, ADR-001).
 	DBPath string
+	// RoutineAPIBase is FLIGHTDECK_ROUTINE_API_BASE: the claude.ai
+	// remote-trigger API root every dispatch posts to. Empty means "use
+	// dispatch.DefaultRoutineAPIBase". It is configurable because the
+	// host/path prefix was read off the remote-trigger API's documented
+	// shape rather than verified from here — an operator who finds it
+	// served elsewhere changes one variable instead of waiting for a
+	// rebuild (ADR-006).
+	RoutineAPIBase string
+	// AnthropicAPIKey is ANTHROPIC_API_KEY: the credential the planner uses to
+	// decompose a goal into tickets. Optional — an empty key leaves the
+	// planning routes reporting 501 while every other route works normally,
+	// because planning is the one feature that costs money per use and should
+	// not be switched on by merely running the binary.
+	AnthropicAPIKey string
 	// RefreshInterval is FLIGHTDECK_REFRESH_INTERVAL: how often the
 	// background refresher (refresh.go) re-derives every registered
 	// project's board and publishes board.changed/ci.changed when it
@@ -56,6 +73,12 @@ type Config struct {
 	// its zero value gets the disabled behavior, matching Go's zero value
 	// for time.Duration; ConfigFromEnv is what applies the 5s default.
 	RefreshInterval time.Duration
+	// Schedule configures the autonomous dispatcher (internal/schedule).
+	// Its Interval is FLIGHTDECK_SCHEDULE_INTERVAL and defaults to DISABLED,
+	// unlike RefreshInterval: the refresher only observes, while the
+	// scheduler spends real agent budget without asking, so it must be
+	// switched on deliberately (ADR-007).
+	Schedule schedule.Config
 }
 
 // ConfigFromEnv builds a Config from the process environment:
@@ -64,6 +87,8 @@ type Config struct {
 //     token (api.constantTimeEqual itself never matches an empty value).
 //   - FLIGHTDECK_ADDR — optional, defaults to ":8080".
 //   - FLIGHTDECK_DB — optional, defaults to "flightdeck.db".
+//   - FLIGHTDECK_ROUTINE_API_BASE — optional; empty means
+//     dispatch.DefaultRoutineAPIBase. Overrides where dispatches are sent.
 //   - FLIGHTDECK_REFRESH_INTERVAL — optional, defaults to 5s; "off" or a
 //     duration <= 0 (e.g. "0") disables the background refresher (see
 //     parseRefreshInterval in refresh.go for the full rule).
@@ -88,7 +113,20 @@ func ConfigFromEnv() (Config, error) {
 		return Config{}, err
 	}
 
-	return Config{Token: token, Addr: addr, DBPath: dbPath, RefreshInterval: refreshInterval}, nil
+	scheduleCfg, err := scheduleConfigFromEnv()
+	if err != nil {
+		return Config{}, err
+	}
+
+	return Config{
+		Token:           token,
+		Addr:            addr,
+		DBPath:          dbPath,
+		RoutineAPIBase:  os.Getenv("FLIGHTDECK_ROUTINE_API_BASE"),
+		AnthropicAPIKey: os.Getenv("ANTHROPIC_API_KEY"),
+		RefreshInterval: refreshInterval,
+		Schedule:        scheduleCfg,
+	}, nil
 }
 
 // App is a fully wired FlightDeck server: the registry, the git+github
@@ -103,6 +141,7 @@ type App struct {
 	handler   http.Handler
 	broker    *api.Broker
 	refresher *Refresher
+	scheduler *schedule.Scheduler
 }
 
 // New builds an App from cfg: it opens the registry, wires the real
@@ -135,21 +174,35 @@ func New(cfg Config) (*App, error) {
 	// ticket 008's handoff).
 	broker := api.NewBroker()
 	source := api.NewGitHubSource(store)
+	dispatchers := api.NewDispatcherFactory(store, cfg.RoutineAPIBase)
 
 	apiSrv := api.NewServer(api.Config{
 		Token:      cfg.Token,
 		Registry:   store,
 		Source:     source,
-		Dispatcher: api.NewDispatcherFactory(store),
+		Dispatcher: dispatchers,
+		Runs:       store,
+		Agents:     store,
+		AgentStore: store,
+		RunHistory: store,
+		Planner:    plan.NewClaudePlanner(cfg.AnthropicAPIKey),
 		Events:     broker,
 	})
 	refresher := NewRefresher(broker, source, store, cfg.RefreshInterval)
+
+	// The scheduler shares the same source, dispatcher factory and broker the
+	// API uses, so a ticket it starts is indistinguishable downstream from one
+	// a human started — same derivation, same events, same run records.
+	scheduler := schedule.New(cfg.Schedule, store, source, dispatchers, runStoreAdapter{store: store}, briefingAdapter{store: store}, brokerPublisher{broker: broker})
 
 	mux := http.NewServeMux()
 	mux.Handle("/api/", apiSrv.Handler())
 	mux.Handle("/", webui.Handler())
 
-	return &App{cfg: cfg, store: store, apiSrv: apiSrv, handler: mux, broker: broker, refresher: refresher}, nil
+	return &App{
+		cfg: cfg, store: store, apiSrv: apiSrv, handler: mux,
+		broker: broker, refresher: refresher, scheduler: scheduler,
+	}, nil
 }
 
 // Handler returns the App's full http.Handler — the API under /api/ and the
@@ -195,13 +248,17 @@ func (a *App) Run(ctx context.Context) error {
 
 	srv := &http.Server{Handler: a.handler}
 
+	// Both background loops share ctx with the server, so one cancellation
+	// stops everything, and Run waits for them before returning — no
+	// goroutine outlives Run.
 	var refreshWG sync.WaitGroup
 	if a.cfg.RefreshInterval > 0 {
-		refreshWG.Add(1)
-		go func() {
-			defer refreshWG.Done()
-			a.refresher.Run(ctx)
-		}()
+		refreshWG.Go(func() { a.refresher.Run(ctx) })
+	}
+	if a.cfg.Schedule.Interval > 0 {
+		log.Printf("flightdeck: scheduler ON — dispatching ready tickets every %s, up to %d in flight per project",
+			a.cfg.Schedule.Interval, a.cfg.Schedule.MaxParallel)
+		refreshWG.Go(func() { a.scheduler.Run(ctx) })
 	}
 
 	serveErr := make(chan error, 1)

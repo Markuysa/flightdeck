@@ -2,10 +2,13 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/Markuysa/flightdeck/internal/core"
+	"github.com/Markuysa/flightdeck/internal/dispatch"
 )
 
 func TestDispatchRejectsNonReadyTicketWith409(t *testing.T) {
@@ -202,5 +205,72 @@ func TestGetAndSetAutopilot(t *testing.T) {
 	getAfterRec := doRequest(t, h, http.MethodGet, "/api/projects/acme/autopilot", nil, ts.token)
 	if got := decodeJSON[AutopilotState](t, getAfterRec); !got.On {
 		t.Errorf("autopilot state after PUT = %+v, want on", got)
+	}
+}
+
+// TestDispatchWithoutRoutineTriggerIs409 pins the distinction the trigger
+// rewiring introduced: a project registered without a routine trigger is a
+// configuration gap the operator can fix (409), not an upstream failure to
+// retry against (502). The two answers send the operator to entirely
+// different places, so they must not collapse into one.
+func TestDispatchWithoutRoutineTriggerIs409(t *testing.T) {
+	t.Parallel()
+	ts := newTestServer()
+	h := ts.srv.Handler()
+	must(t, ts.registry.Add(context.Background(), core.Project{ID: "acme", Name: "Acme", RepoPath: "/repos/acme"}))
+	ts.source.setBoard("acme", []core.BoardTicket{
+		{Ticket: core.Ticket{ID: 1}, Status: core.StatusReady},
+	})
+	// What the real dispatch.Client returns for a project with no trigger.
+	ts.dispatcher.forProject("acme").fireErr = fmt.Errorf("%w: project %q", dispatch.ErrNoRoutineTrigger, "acme")
+
+	rec := doRequest(t, h, http.MethodPost, "/api/projects/acme/dispatch", DispatchRequest{TicketID: 1}, ts.token)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("dispatch without a routine trigger = %d, want 409: %s", rec.Code, rec.Body.String())
+	}
+	if body := rec.Body.String(); !strings.Contains(body, "routine trigger") {
+		t.Errorf("409 body = %s, want it to name the missing routine trigger", body)
+	}
+}
+
+// TestDispatchUpstreamFailureIs502 is TestDispatchWithoutRoutineTriggerIs409's
+// other half: a routine that was called and failed is still a 502.
+func TestDispatchUpstreamFailureIs502(t *testing.T) {
+	t.Parallel()
+	ts := newTestServer()
+	h := ts.srv.Handler()
+	must(t, ts.registry.Add(context.Background(), core.Project{ID: "acme", Name: "Acme", RepoPath: "/repos/acme"}))
+	ts.source.setBoard("acme", []core.BoardTicket{
+		{Ticket: core.Ticket{ID: 1}, Status: core.StatusReady},
+	})
+	ts.dispatcher.forProject("acme").fireErr = fmt.Errorf("%w: 500", dispatch.ErrDispatchFailed)
+
+	rec := doRequest(t, h, http.MethodPost, "/api/projects/acme/dispatch", DispatchRequest{TicketID: 1}, ts.token)
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("dispatch with a failing routine = %d, want 502: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestDispatcherFactoryUsesConfiguredAPIBase guards the wiring bug this
+// change exists to fix: before it, the composition root never passed a
+// routine endpoint through, so every dispatch went to a hardcoded
+// placeholder host. An empty base must fall back to the package default,
+// never to "".
+func TestDispatcherFactoryUsesConfiguredAPIBase(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct{ name, given, want string }{
+		{"explicit override", "https://api.example.test", "https://api.example.test"},
+		{"empty falls back to default", "", dispatch.DefaultRoutineAPIBase},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			f, ok := NewDispatcherFactory(&fakeRegistry{}, tc.given).(*gitHubDispatcherFactory)
+			if !ok {
+				t.Fatal("NewDispatcherFactory did not return *gitHubDispatcherFactory")
+			}
+			if f.routineAPIBase != tc.want {
+				t.Errorf("routineAPIBase = %q, want %q", f.routineAPIBase, tc.want)
+			}
+		})
 	}
 }

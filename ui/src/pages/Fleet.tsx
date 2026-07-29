@@ -2,6 +2,7 @@ import { Plus, Rocket, ServerCrash } from 'lucide-react'
 import { useState } from 'react'
 import { Button } from '../components/Button'
 import { EmptyState } from '../components/EmptyState'
+import { FleetSummary } from '../components/FleetSummary'
 import { ProjectCard } from '../components/ProjectCard'
 import { RegisterProjectDialog } from '../components/RegisterProjectDialog'
 import { useProjects } from '../hooks/useProjects'
@@ -47,11 +48,14 @@ export function Fleet() {
           description="Register a project's local repository to start driving its ticket queue from here."
         />
       ) : (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4">
-          {projects.map((project) => (
-            <ProjectCard key={project.id} project={project} onRemove={() => remove(project.id)} />
-          ))}
-        </div>
+        <>
+          <FleetSummary projects={projects} />
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
+            {projects.map((project) => (
+              <ProjectCard key={project.id} project={project} onRemove={() => remove(project.id)} />
+            ))}
+          </div>
+        </>
       )}
 
       {dialogOpen && (

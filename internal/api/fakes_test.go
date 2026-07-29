@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -163,7 +164,7 @@ type fakeDispatcher struct {
 
 var _ core.Dispatcher = (*fakeDispatcher)(nil)
 
-func (d *fakeDispatcher) Fire(_ context.Context, _ core.Project, ticketID int) (string, error) {
+func (d *fakeDispatcher) Fire(_ context.Context, _ core.Project, ticketID int, brief core.Briefing) (string, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.firedTicketIDs = append(d.firedTicketIDs, ticketID)
@@ -234,6 +235,8 @@ type testServer struct {
 	registry   *fakeRegistry
 	source     *fakeSource
 	dispatcher *fakeDispatcherFactory
+	runs       *fakeRunStore
+	planner    *fakePlanner
 	token      string
 }
 
@@ -244,6 +247,8 @@ func newTestServer() *testServer {
 		registry:   newFakeRegistry(),
 		source:     newFakeSource(),
 		dispatcher: newFakeDispatcherFactory(),
+		runs:       newFakeRunStore(),
+		planner:    &fakePlanner{},
 		token:      testToken,
 	}
 	ts.srv = NewServer(Config{
@@ -251,6 +256,58 @@ func newTestServer() *testServer {
 		Registry:   ts.registry,
 		Source:     ts.source,
 		Dispatcher: ts.dispatcher,
+		Runs:       ts.runs,
+		Planner:    ts.planner,
+		Events:     nil,
 	})
 	return ts
 }
+
+// fakeRunStore is an in-memory RunStore matching registry.Store's semantics:
+// StartRun assigns ids, LatestRun returns the newest row for a ticket.
+type fakeRunStore struct {
+	mu       sync.Mutex
+	nextID   int64
+	runs     []registry.Run
+	startErr error
+}
+
+var _ RunStore = (*fakeRunStore)(nil)
+
+func newFakeRunStore() *fakeRunStore { return &fakeRunStore{} }
+
+func (f *fakeRunStore) StartRun(_ context.Context, projectID string, ticketID, attempt int, sessionURL string, at time.Time) (registry.Run, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.startErr != nil {
+		return registry.Run{}, f.startErr
+	}
+	f.nextID++
+	run := registry.Run{
+		ID: f.nextID, ProjectID: projectID, TicketID: ticketID, Attempt: attempt,
+		State: registry.RunRunning, SessionURL: sessionURL, StartedAt: at,
+	}
+	f.runs = append(f.runs, run)
+	return run, nil
+}
+
+func (f *fakeRunStore) LatestRun(_ context.Context, projectID string, ticketID int) (registry.Run, bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i := len(f.runs) - 1; i >= 0; i-- {
+		if f.runs[i].ProjectID == projectID && f.runs[i].TicketID == ticketID {
+			return f.runs[i], true, nil
+		}
+	}
+	return registry.Run{}, false, nil
+}
+
+// all returns every recorded run, for assertions.
+func (f *fakeRunStore) all() []registry.Run {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]registry.Run(nil), f.runs...)
+}
+
+// errFake is a generic failure for fakes that need to error.
+var errFake = errors.New("fake failure")

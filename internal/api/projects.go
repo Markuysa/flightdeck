@@ -85,9 +85,10 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	p := core.Project{
-		ID:       slugify(body.Name),
-		Name:     body.Name,
-		RepoPath: body.RepoPath,
+		ID:               slugify(body.Name),
+		Name:             body.Name,
+		RepoPath:         body.RepoPath,
+		RoutineTriggerID: body.RoutineTriggerID,
 	}
 	if body.GitHub != nil {
 		p.Remote = "github"

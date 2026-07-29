@@ -50,9 +50,9 @@ func (Secrets) GoString() string { return "registry.Secrets{redacted}" }
 // ID that already exists returns the underlying UNIQUE constraint error.
 func (s *Store) Add(ctx context.Context, p core.Project) error {
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO projects (id, name, repo_path, remote, owner, repo)
-		VALUES (?, ?, ?, ?, ?, ?)
-	`, p.ID, p.Name, p.RepoPath, p.Remote, p.Owner, p.Repo)
+		INSERT INTO projects (id, name, repo_path, remote, owner, repo, routine_trigger_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, p.ID, p.Name, p.RepoPath, p.Remote, p.Owner, p.Repo, p.RoutineTriggerID)
 	if err != nil {
 		return fmt.Errorf("adding project %q: %w", p.ID, err)
 	}
@@ -63,7 +63,8 @@ func (s *Store) Add(ctx context.Context, p core.Project) error {
 // empty slice, never an error, when no project is registered.
 func (s *Store) List(ctx context.Context) ([]core.Project, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, name, repo_path, remote, owner, repo FROM projects ORDER BY id
+		SELECT id, name, repo_path, remote, owner, repo, routine_trigger_id
+		FROM projects ORDER BY id
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("listing projects: %w", err)
@@ -73,7 +74,7 @@ func (s *Store) List(ctx context.Context) ([]core.Project, error) {
 	projects := []core.Project{}
 	for rows.Next() {
 		var p core.Project
-		if err := rows.Scan(&p.ID, &p.Name, &p.RepoPath, &p.Remote, &p.Owner, &p.Repo); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.RepoPath, &p.Remote, &p.Owner, &p.Repo, &p.RoutineTriggerID); err != nil {
 			return nil, fmt.Errorf("scanning project row: %w", err)
 		}
 		projects = append(projects, p)
@@ -89,8 +90,9 @@ func (s *Store) List(ctx context.Context) ([]core.Project, error) {
 func (s *Store) Get(ctx context.Context, id string) (core.Project, error) {
 	var p core.Project
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, name, repo_path, remote, owner, repo FROM projects WHERE id = ?
-	`, id).Scan(&p.ID, &p.Name, &p.RepoPath, &p.Remote, &p.Owner, &p.Repo)
+		SELECT id, name, repo_path, remote, owner, repo, routine_trigger_id
+		FROM projects WHERE id = ?
+	`, id).Scan(&p.ID, &p.Name, &p.RepoPath, &p.Remote, &p.Owner, &p.Repo, &p.RoutineTriggerID)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		return core.Project{}, fmt.Errorf("getting project %q: %w", id, core.ErrProjectNotFound)
@@ -100,11 +102,11 @@ func (s *Store) Get(ctx context.Context, id string) (core.Project, error) {
 	return p, nil
 }
 
-// Remove deletes the registered project with id and any secrets stored for
-// it, or returns a wrapped core.ErrProjectNotFound when id is not
-// registered. Both deletes happen in one transaction, so a failure removing
-// secrets never leaves the project row deleted with orphaned tokens intact,
-// or vice versa.
+// Remove deletes the registered project with id, along with any secrets and
+// run history stored for it, or returns a wrapped core.ErrProjectNotFound
+// when id is not registered. Every delete happens in one transaction, so a
+// failure partway never leaves the project row gone with orphaned tokens or
+// runs intact, or vice versa.
 func (s *Store) Remove(ctx context.Context, id string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -125,6 +127,12 @@ func (s *Store) Remove(ctx context.Context, id string) error {
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM project_secrets WHERE project_id = ?`, id); err != nil {
 		return fmt.Errorf("removing secrets for project %q: %w", id, err)
+	}
+	if err := removeRuns(ctx, tx, id); err != nil {
+		return err
+	}
+	if err := removeAgents(ctx, tx, id); err != nil {
+		return err
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("removing project %q: %w", id, err)

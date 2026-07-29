@@ -48,12 +48,20 @@ type SecretsReader interface {
 // scratch, matching ADR-001.
 type gitHubSource struct {
 	secrets SecretsReader
+	// ghCache is shared by every github.Client this source builds. It must
+	// live here, not on the Client: a Client is rebuilt per board read (see
+	// openPRs), so a cache scoped to one would be discarded before its
+	// first hit. Holding it at source level is what lets the background
+	// refresher's polling ride on 304s, which GitHub does not charge
+	// against the REST rate limit.
+	ghCache *github.Cache
 }
 
 // NewGitHubSource returns the real ProjectSource, sourcing GitHub tokens
-// per project from secrets.
+// per project from secrets. Build one per process and share it: it owns the
+// conditional-request cache every GitHub read revalidates against.
 func NewGitHubSource(secrets SecretsReader) ProjectSource {
-	return &gitHubSource{secrets: secrets}
+	return &gitHubSource{secrets: secrets, ghCache: github.NewCache()}
 }
 
 // ticketBranchPattern matches a ticket branch's leading numeric id, e.g.
@@ -141,7 +149,7 @@ func (s *gitHubSource) openPRs(ctx context.Context, p core.Project) (map[string]
 	if err != nil && !errors.Is(err, core.ErrProjectNotFound) {
 		return nil, fmt.Errorf("reading secrets for project %q: %w", p.ID, err)
 	}
-	client := github.New(p.Owner, p.Repo, sec.GitHubToken)
+	client := github.New(p.Owner, p.Repo, sec.GitHubToken, github.WithCache(s.ghCache))
 	prs, err := client.OpenPRs(ctx)
 	if err != nil {
 		if errors.Is(err, github.ErrGitHubUnavailable) {
